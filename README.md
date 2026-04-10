@@ -20,4 +20,4 @@ Repositorio con los scripts en R desarrollados para el Trabajo de Fin de Grado:
 - `export_prophet.R` — Exportación de resultados de Prophet.
 
 ## Autor
-Rubén Gragera Flórez
+Rodrigo Gragera Flórez
