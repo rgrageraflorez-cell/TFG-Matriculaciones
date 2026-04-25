@@ -1,0 +1,57 @@
+# ──────────────────────────────────────────────────────────────────────────
+# CSV pesado (~150 MB): supera el límite de 100 MB de GitHub.
+# Se aloja externamente (Google Drive) y se referencia vía
+# VITE_CSV_MARCA_LUGAR_URL. NUNCA debe subirse al repositorio.
+# ──────────────────────────────────────────────────────────────────────────
+df_mensual_marca_lugar.csv
+**/df_mensual_marca_lugar.csv
+
+# ──────────────────────────────────────────────────────────────────────────
+# Datos personales: subscribers.json contiene emails de usuarios.
+# Se gestiona en producción por separado (storage seguro / API).
+# ──────────────────────────────────────────────────────────────────────────
+subscribers.json
+**/subscribers.json
+subscribers.test.json
+**/subscribers.test.json
+
+# ──────────────────────────────────────────────────────────────────────────
+# Credenciales y secretos: nunca subir claves de API ni .env reales.
+# Solo se publica .env.example con la documentación de variables.
+# ──────────────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ──────────────────────────────────────────────────────────────────────────
+# Logs locales generados por los scripts Python (pueden contener
+# información sensible y se regeneran en cada ejecución).
+# ──────────────────────────────────────────────────────────────────────────
+alert_log.txt
+monthly_report_log.txt
+prophet_territorial_log.txt
+*.log
+
+# ──────────────────────────────────────────────────────────────────────────
+# Dependencias y artefactos de build: se regeneran en CI / Vercel.
+# ──────────────────────────────────────────────────────────────────────────
+node_modules/
+build/
+dist/
+coverage/
+
+# ──────────────────────────────────────────────────────────────────────────
+# Caches de Python (scripts en public/) y configs locales del IDE/agente.
+# ──────────────────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.pyc
+.claude/
+
+# ──────────────────────────────────────────────────────────────────────────
+# Archivos del sistema operativo y del editor.
+# ──────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

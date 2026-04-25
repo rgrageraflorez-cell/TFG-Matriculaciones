@@ -1,0 +1,208 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────────────────────────────────
+   MatriX — Executive Design System (McKinsey/BCG-inspired)
+   Paleta angular, tipografía Inter, dorado #C4922A solo para datos clave.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Paleta ejecutiva */
+  --color-bg-app: #F7F7F5;
+  --color-bg-card: #FFFFFF;
+  --color-navy: #1A2B4A;
+  --color-navy-2: #2C4A7C;
+  --color-gold: #C4922A;
+  --color-text: #2D2D2D;
+  --color-text-muted: #6B7280;
+  --color-border: #E5E7EB;
+  --color-pos: #15803D;
+  --color-neg: #B91C1C;
+}
+
+@layer base {
+  html, body {
+    background: #F7F7F5;
+    color: #2D2D2D;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body { font-size: 13px; }
+
+  h1, h2, h3, h4 { color: #1A2B4A; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; font-weight: 600; }
+  h3 { font-size: 16px; font-weight: 600; }
+
+  /* Scrollbar minimalista */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 0; }
+  ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+  /* Selección */
+  ::selection { background: #1A2B4A; color: #FFFFFF; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Utilidades ejecutivas
+   ────────────────────────────────────────────────────────────────────────── */
+
+.exec-app-bg { background: #F7F7F5; }
+
+.exec-header {
+  background: #1A2B4A;
+  color: #FFFFFF;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #0F1B30;
+}
+
+.exec-card {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.exec-kpi {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-left: 3px solid #1A2B4A;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: 24px;
+}
+
+.exec-kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6B7280;
+}
+
+.exec-kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1A2B4A;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.exec-kpi-value-gold { color: #C4922A; }
+
+.exec-kpi-delta-pos { color: #15803D; font-weight: 600; font-variant-numeric: tabular-nums; }
+.exec-kpi-delta-neg { color: #B91C1C; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.exec-section-title { font-size: 18px; font-weight: 600; color: #1A2B4A; letter-spacing: -0.01em; }
+.exec-subtitle { font-size: 14px; font-weight: 500; color: #2D2D2D; }
+.exec-label {
+  font-size: 11px; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #6B7280;
+}
+.exec-body { font-size: 13px; color: #2D2D2D; line-height: 1.55; }
+.exec-muted { color: #6B7280; }
+
+.exec-divider { border-top: 1px solid #E5E7EB; }
+
+/* Tabla ejecutiva */
+.exec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.exec-table thead th {
+  text-align: left;
+  font-size: 11px; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.05em; color: #6B7280;
+  padding: 12px 16px; border-bottom: 1px solid #E5E7EB; background: #FAFAF8;
+}
+.exec-table tbody td {
+  padding: 12px 16px; border-bottom: 1px solid #F1F2F4;
+  color: #2D2D2D; font-variant-numeric: tabular-nums;
+}
+.exec-table tbody tr:hover { background: #FAFAF8; }
+
+/* Botones */
+.exec-btn {
+  background: #1A2B4A; color: #FFFFFF;
+  font-size: 13px; font-weight: 500; letter-spacing: 0.01em;
+  padding: 10px 18px; border-radius: 2px; border: 1px solid #1A2B4A;
+  transition: background 150ms ease;
+  cursor: pointer;
+}
+.exec-btn:hover { background: #2C4A7C; border-color: #2C4A7C; }
+.exec-btn:disabled { background: #9CA3AF; border-color: #9CA3AF; cursor: not-allowed; }
+
+.exec-btn-secondary {
+  background: #FFFFFF; color: #1A2B4A;
+  border: 1px solid #E5E7EB;
+}
+.exec-btn-secondary:hover { background: #F7F7F5; border-color: #1A2B4A; }
+
+/* Inputs */
+.exec-input {
+  background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 2px;
+  padding: 10px 12px; font-size: 13px; color: #2D2D2D;
+  transition: border-color 150ms ease;
+  width: 100%;
+}
+.exec-input:focus { outline: none; border-color: #1A2B4A; }
+
+/* Badges semánticas */
+.exec-badge-pos {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #ECFDF5; color: #15803D; border: 1px solid #BBF7D0;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 2px;
+}
+.exec-badge-neg {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 2px;
+}
+.exec-badge-neutral {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #F3F4F6; color: #2D2D2D; border: 1px solid #E5E7EB;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 2px;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   COMPATIBILIDAD: redefiniciones suaves para que los componentes existentes
+   que usan utilidades genéricas de Tailwind (bg-white, slate, rounded-2xl…)
+   adopten el lenguaje ejecutivo sin reescribir cada archivo.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@layer utilities {
+  /* Forzar esquinas angulares en tarjetas grandes */
+  .rounded-2xl { border-radius: 4px !important; }
+  .rounded-xl  { border-radius: 4px !important; }
+  .rounded-lg  { border-radius: 3px !important; }
+  .rounded-md  { border-radius: 2px !important; }
+
+  /* Sombras: sustituimos las pronunciadas por la sombra ejecutiva */
+  .shadow-sm,
+  .shadow,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+  }
+}
+
+/* Cabeceras numéricas (KPIs grandes) — afinar */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Acento dorado solo para datos destacados */
+.exec-accent-gold { color: #C4922A !important; }
+
+/* Tooltip personalizado de recharts */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  border: 1px solid #E5E7EB !important;
+  background: #FFFFFF !important;
+  border-radius: 2px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+}
