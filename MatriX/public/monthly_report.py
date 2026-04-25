@@ -384,6 +384,25 @@ def minmax(v: float, vmin: float, vmax: float) -> float:
     return ((v - vmin) / (vmax - vmin)) * 100
 
 
+def minmax_log(v: float, vmin: float, vmax: float) -> float:
+    """Normalizacion log-min-max a [0, 100].
+
+    Aplica logaritmo natural antes del min-max para amortiguar la cola
+    larga que generan provincias dominantes (Madrid, Barcelona) y evitar
+    que el resto colapse a ~0. Se usa exclusivamente para la dimension
+    de mercado (matriculaciones brutas).
+    """
+    import math
+    if vmax <= vmin:
+        return 50.0
+    log_v = math.log(v + 1)
+    log_min = math.log(vmin + 1)
+    log_max = math.log(vmax + 1)
+    if log_max <= log_min:
+        return 50.0
+    return ((log_v - log_min) / (log_max - log_min)) * 100
+
+
 def calcular_score_territorial(
     df_mapa: pd.DataFrame,
     fecha_snapshot: pd.Timestamp,
@@ -455,7 +474,7 @@ def calcular_score_territorial(
     filas: list[ScoreRow] = []
     for b in base:
         s_dem = minmax(b["ratio_medio"], r_min, r_max)
-        s_mer = minmax(b["mat_brutas"], m_min, m_max)
+        s_mer = minmax_log(b["mat_brutas"], m_min, m_max)
         s_ten = minmax(b["crecimiento"], c_min, c_max)
         score_base = s_dem * 0.4 + s_mer * 0.3 + s_ten * 0.25
         penal_conf = len(b["anom_conf"]) * 5

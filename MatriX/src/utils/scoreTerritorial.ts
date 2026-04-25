@@ -290,6 +290,9 @@ export async function calcularScoreTerritorial(
   onProgress?.("Normalizando dimensiones...");
 
   // ── Normalizacion min-max a [0, 100] ──
+  // Nota: para la dimension de mercado (matriculaciones brutas) aplicamos
+  // logaritmo natural antes de normalizar, para amortiguar la cola larga
+  // que generan Madrid y Barcelona y evitar que el resto colapse a ~0.
   const ratios = base.map((b) => b.ratio_medio);
   const mats = base.map((b) => b.mat_brutas);
   const crecs = base.map((b) => b.crecimiento);
@@ -300,11 +303,19 @@ export async function calcularScoreTerritorial(
   const normalize = (v: number, min: number, max: number) =>
     max > min ? ((v - min) / (max - min)) * 100 : 50;
 
+  // Normalizacion log-min-max para la dimension de mercado.
+  const normalizeLog = (v: number, min: number, max: number) => {
+    const logV = Math.log(v + 1);
+    const logMin = Math.log(min + 1);
+    const logMax = Math.log(max + 1);
+    return logMax > logMin ? ((logV - logMin) / (logMax - logMin)) * 100 : 50;
+  };
+
   onProgress?.("Calculando score final...");
 
   const filas: ScoreRow[] = base.map((b) => {
     const sDem = normalize(b.ratio_medio, rMin, rMax);
-    const sMer = normalize(b.mat_brutas, mMin, mMax);
+    const sMer = normalizeLog(b.mat_brutas, mMin, mMax);
     const sTen = normalize(b.crecimiento, cMin, cMax);
 
     const scoreBase = sDem * 0.4 + sMer * 0.3 + sTen * 0.25;
