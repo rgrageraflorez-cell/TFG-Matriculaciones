@@ -7,7 +7,6 @@ import {
   cargarProvinciasLookup,
   cargarTendenciaProvincial,
   colorForScore,
-  ESCALA_COLORES_EXPORT,
   type ScoreRow,
 } from "./utils/scoreTerritorial";
 
@@ -80,6 +79,41 @@ export default function ScoreTerritorialSection({ mapData, geoJson }: Props) {
     const vals = scores.map((s) => s.score_final);
     return { minScore: Math.min(...vals), maxScore: Math.max(...vals) };
   }, [scores]);
+
+  // ── Color del mapa por PERCENTIL del score dentro de las 52 provincias ──
+  // Garantiza ~10 provincias en cada uno de los 5 cubos cromáticos,
+  // independientemente de cómo se distribuyan los scores absolutos.
+  const PERCENTIL_BANDAS: { umbral: number; color: string; label: string }[] = [
+    { umbral: 80, color: "#15803D", label: "Top 20%" },
+    { umbral: 60, color: "#86EFAC", label: "60-80%" },
+    { umbral: 40, color: "#FCD34D", label: "40-60%" },
+    { umbral: 20, color: "#F97316", label: "20-40%" },
+    { umbral: 0,  color: "#B91C1C", label: "Bottom 20%" },
+  ];
+
+  const colorByProvCode = useMemo(() => {
+    const out = new Map<string, string>();
+    if (!scores.length) return out;
+    const N = scores.length;
+    // Provincias ordenadas por score ascendente; el rank 0 es la peor,
+    // el rank N-1 la mejor. Empates: orden estable por aparición.
+    const ordenAsc = [...scores].sort((a, b) => a.score_final - b.score_final);
+    const rankByProv = new Map<string, number>();
+    ordenAsc.forEach((r, i) => rankByProv.set(r.provincia, i));
+
+    const nameToCode = new Map<string, string>();
+    for (const [code, name] of provLookup) nameToCode.set(name, code);
+
+    for (const r of scores) {
+      const code = nameToCode.get(r.provincia);
+      if (!code) continue;
+      const rank = rankByProv.get(r.provincia) ?? 0;
+      const percentil = N > 1 ? (rank / (N - 1)) * 100 : 100;
+      const banda = PERCENTIL_BANDAS.find((b) => percentil >= b.umbral) ?? PERCENTIL_BANDAS[PERCENTIL_BANDAS.length - 1];
+      out.set(code, banda.color);
+    }
+    return out;
+  }, [scores, provLookup]);
 
   // ── Insights automaticos ──
   const insights = useMemo(() => {
@@ -187,7 +221,9 @@ export default function ScoreTerritorialSection({ mapData, geoJson }: Props) {
                     geographies.map((geo: any) => {
                       const provCode = String(geo.properties.prov ?? "").padStart(2, "0");
                       const row = scoreByProvCode.get(provCode);
-                      const fill = row ? colorForScore(row.score_final, minScore, maxScore) : "#e5e7eb";
+                      const fill = row
+                        ? (colorByProvCode.get(provCode) ?? "#e5e7eb")
+                        : "#e5e7eb";
                       return (
                         <Geography
                           key={geo.rsmKey}
@@ -210,15 +246,18 @@ export default function ScoreTerritorialSection({ mapData, geoJson }: Props) {
                 </Geographies>
               </ComposableMap>
 
-              {/* Leyenda */}
-              <div className="flex items-center gap-3 mt-4 justify-center">
-                <span className="text-xs text-slate-600">Menor oportunidad</span>
-                <div className="flex h-3 rounded overflow-hidden border border-slate-300">
-                  {ESCALA_COLORES_EXPORT.map((c) => (
-                    <div key={c} className="w-10" style={{ backgroundColor: c }} />
-                  ))}
-                </div>
-                <span className="text-xs text-slate-600">Mayor oportunidad</span>
+              {/* Leyenda — bandas por percentil dentro de las 52 provincias */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 justify-center">
+                {/* Mostramos de mejor a peor para leerse de izquierda a derecha. */}
+                {[...PERCENTIL_BANDAS].map((b) => (
+                  <div key={b.color} className="flex items-center gap-2">
+                    <span
+                      className="inline-block h-3 w-5 rounded-sm border border-slate-300"
+                      style={{ backgroundColor: b.color }}
+                    />
+                    <span className="text-xs text-slate-600">{b.label}</span>
+                  </div>
+                ))}
               </div>
 
               {tooltip && (
