@@ -201,36 +201,77 @@ def cargar_geojson_provincias(path: Path) -> dict[str, str]:
     return out
 
 
-def cargar_tendencia_provincial(path: Path) -> dict[str, dict[int, float]]:
+def cargar_tendencia_provincial(
+    path: Path, df_mapa: pd.DataFrame | None = None
+) -> dict[str, dict[str, float]]:
     """
-    Lee df_mensual_marca_lugar.csv y agrega totales anuales por provincia.
-    Devuelve {prov_code: {año: total_matriculaciones}}.
+    Lee df_mensual_marca_lugar.csv y agrega totales MENSUALES por provincia.
+
+    El CSV no incluye cod_ine; trae el nombre del municipio en la columna
+    'lugar'. Se cruza por nombre normalizado (mayusculas sin tildes) contra
+    df_mapa_densidad.csv (que si trae cod_ine) para deducir prov_code.
+
+    Devuelve {prov_code: {"YYYY-MM": total_matriculaciones}}.
     """
     if not path.exists():
         return {}
-    resultado: dict[str, dict[int, float]] = {}
+
+    # 1) Construir muni_normalizado -> prov_code (una sola vez)
+    if df_mapa is None:
+        try:
+            df_mapa = pd.read_csv(DEFAULT_CSV_MAPA, dtype={"cod_ine": str}, low_memory=False)
+        except Exception as exc:
+            print(f"AVISO: no se pudo cargar df_mapa_densidad.csv: {exc}", file=sys.stderr)
+            return {}
+    if "cod_ine" not in df_mapa.columns or "municipio" not in df_mapa.columns:
+        return {}
+
+    muni_to_prov: dict[str, str] = {}
+    cod_series = df_mapa["cod_ine"].astype(str).str.zfill(5)
+    prov_series = cod_series.str[:2]
+    muni_norm = df_mapa["municipio"].astype(str).map(norm).str.strip()
+    for muni_n, prov in zip(muni_norm, prov_series):
+        if muni_n and len(prov) == 2 and muni_n not in muni_to_prov:
+            muni_to_prov[muni_n] = prov
+
+    # 2) Streaming del CSV pesado por chunks
+    resultado: dict[str, dict[str, float]] = {}
     try:
-        for chunk in pd.read_csv(path, chunksize=500_000, low_memory=False):
+        for chunk in pd.read_csv(path, chunksize=500_000, low_memory=False, encoding="utf-8"):
             chunk.columns = [c.strip() for c in chunk.columns]
-            if "cod_ine" not in chunk.columns or "matriculaciones" not in chunk.columns:
+            if "lugar" not in chunk.columns or "matriculaciones" not in chunk.columns:
                 return {}
             # Excluir "TOTAL MARCAS" (doble conteo)
             if "marca" in chunk.columns:
                 chunk = chunk[chunk["marca"].astype(str).str.upper().str.strip() != "TOTAL MARCAS"]
-            # Año
-            if "Año" in chunk.columns:
-                chunk["_ano"] = pd.to_numeric(chunk["Año"], errors="coerce")
-            elif "fecha_mes" in chunk.columns:
-                chunk["_ano"] = pd.to_datetime(chunk["fecha_mes"], errors="coerce").dt.year
+
+            # Extraer (año, mes) priorizando 'fecha_mes'
+            ym: pd.Series
+            if "fecha_mes" in chunk.columns:
+                f = pd.to_datetime(chunk["fecha_mes"], errors="coerce")
+                ym = f.dt.year.astype("Int64").astype(str) + "-" + f.dt.month.astype("Int64").astype(str).str.zfill(2)
+                mask_valid = f.notna()
             else:
-                continue
-            chunk = chunk.dropna(subset=["_ano"])
-            chunk["_ano"] = chunk["_ano"].astype(int)
-            chunk["_prov"] = chunk["cod_ine"].astype(str).str.zfill(5).str[:2]
+                ano_col = next((c for c in chunk.columns if c.lower() in ("año", "ano")), None)
+                if ano_col is None or "Mes" not in chunk.columns:
+                    continue
+                ano = pd.to_numeric(chunk[ano_col], errors="coerce")
+                mes = pd.to_numeric(chunk["Mes"], errors="coerce")
+                mask_valid = ano.notna() & mes.notna() & mes.between(1, 12)
+                ym = ano.fillna(0).astype(int).astype(str) + "-" + mes.fillna(0).astype(int).astype(str).str.zfill(2)
+            chunk = chunk[mask_valid].copy()
+            chunk["_ym"] = ym[mask_valid].values
+
+            # Cruce por nombre de municipio normalizado
+            lug_norm = chunk["lugar"].astype(str).map(norm).str.strip()
+            chunk["_prov"] = lug_norm.map(muni_to_prov)
+            chunk = chunk.dropna(subset=["_prov"])
+
             chunk["_mat"] = pd.to_numeric(chunk["matriculaciones"], errors="coerce").fillna(0)
-            agg = chunk.groupby(["_prov", "_ano"])["_mat"].sum()
-            for (prov, ano), total in agg.items():
-                resultado.setdefault(prov, {})[int(ano)] = resultado.get(prov, {}).get(int(ano), 0) + float(total)
+            agg = chunk.groupby(["_prov", "_ym"])["_mat"].sum()
+            for (prov, ymk), total in agg.items():
+                serie = resultado.setdefault(prov, {})
+                serie[ymk] = serie.get(ymk, 0.0) + float(total)
     except Exception as exc:
         print(f"AVISO: no se pudo procesar tendencia provincial: {exc}", file=sys.stderr)
         return {}
@@ -407,12 +448,44 @@ def calcular_score_territorial(
     df_mapa: pd.DataFrame,
     fecha_snapshot: pd.Timestamp,
     prov_lookup: dict[str, str],
-    tendencia: dict[str, dict[int, float]],
+    tendencia: dict[str, dict[str, float]],
 ) -> list[ScoreRow]:
-    """Calcula score para todas las provincias usando un snapshot dado."""
+    """Calcula score para todas las provincias usando un snapshot dado.
+
+    La tendencia se calcula como TTM (trailing twelve months): suma de los
+    12 meses mas recientes con datos en el CSV menos la suma de los 12
+    meses inmediatamente anteriores, en porcentaje sobre la base. Las
+    provincias que no tengan los 24 meses completos quedan con
+    crecimiento = 0 y score_tendencia neutro = 50, sin afectar al min-max
+    del resto.
+    """
     snap = df_mapa[df_mapa["fecha"] == fecha_snapshot].copy()
     if snap.empty:
         return []
+
+    # ── Determinar ventanas TTM globales ──
+    all_months: set[str] = set()
+    for serie in tendencia.values():
+        all_months.update(serie.keys())
+    sorted_months = sorted(all_months)
+    months_current: list[str] = sorted_months[-12:] if len(sorted_months) >= 24 else []
+    months_base: list[str] = sorted_months[-24:-12] if len(sorted_months) >= 24 else []
+
+    def crec_ttm(prov_code: str) -> tuple[float, bool]:
+        if not months_current or not months_base:
+            return 0.0, False
+        serie = tendencia.get(prov_code, {})
+        if not serie:
+            return 0.0, False
+        if not all(k in serie for k in months_current):
+            return 0.0, False
+        if not all(k in serie for k in months_base):
+            return 0.0, False
+        sum_cur = sum(serie[k] for k in months_current)
+        sum_base = sum(serie[k] for k in months_base)
+        if sum_base <= 0:
+            return 0.0, False
+        return ((sum_cur - sum_base) / sum_base) * 100, True
 
     # Agregacion provincial
     base: list[dict[str, Any]] = []
@@ -424,15 +497,7 @@ def calcular_score_territorial(
         ratio_medio = sum(ratios) / len(ratios) if ratios else 0.0
         mat_total = float(grp["matriculaciones"].sum())
 
-        # Tendencia interanual (año N vs año N-2)
-        crecimiento = 0.0
-        serie = tendencia.get(prov_code, {})
-        if serie:
-            anios = sorted(serie.keys())
-            ano_n = anios[-1]
-            ano_prev = ano_n - 2
-            if ano_prev in serie and serie[ano_prev] > 0:
-                crecimiento = ((serie[ano_n] - serie[ano_prev]) / serie[ano_prev]) * 100
+        crecimiento, tendencia_valida = crec_ttm(prov_code)
 
         # Anomalias confirmadas
         anom_conf: list[str] = []
@@ -457,6 +522,7 @@ def calcular_score_territorial(
             "ratio_medio": ratio_medio,
             "mat_brutas": mat_total,
             "crecimiento": crecimiento,
+            "tendencia_valida": tendencia_valida,
             "anom_conf": anom_conf,
             "anom_pot": anom_pot,
         })
@@ -466,16 +532,17 @@ def calcular_score_territorial(
 
     ratios = [b["ratio_medio"] for b in base]
     mats = [b["mat_brutas"] for b in base]
-    crecs = [b["crecimiento"] for b in base]
+    crecs_validos = [b["crecimiento"] for b in base if b["tendencia_valida"]]
     r_min, r_max = min(ratios), max(ratios)
     m_min, m_max = min(mats), max(mats)
-    c_min, c_max = min(crecs), max(crecs)
+    c_min = min(crecs_validos) if crecs_validos else 0.0
+    c_max = max(crecs_validos) if crecs_validos else 0.0
 
     filas: list[ScoreRow] = []
     for b in base:
         s_dem = minmax(b["ratio_medio"], r_min, r_max)
         s_mer = minmax_log(b["mat_brutas"], m_min, m_max)
-        s_ten = minmax(b["crecimiento"], c_min, c_max)
+        s_ten = minmax(b["crecimiento"], c_min, c_max) if b["tendencia_valida"] else 50.0
         score_base = s_dem * 0.4 + s_mer * 0.3 + s_ten * 0.25
         penal_conf = len(b["anom_conf"]) * 5
         penal_pot = min(len(b["anom_pot"]) * 2, 6)
@@ -1038,7 +1105,7 @@ def main() -> int:
         print("AVISO: sin lookup de provincias, los bloques provinciales quedarán vacíos.", file=sys.stderr)
 
     print("Cargando tendencia provincial (CSV de marca/lugar ~150 MB)...")
-    tendencia = cargar_tendencia_provincial(DEFAULT_CSV_MARCA_LUGAR)
+    tendencia = cargar_tendencia_provincial(DEFAULT_CSV_MARCA_LUGAR, df_mapa=df_mapa)
 
     # 3. Bloques comunes (idem para todos los suscriptores)
     try:

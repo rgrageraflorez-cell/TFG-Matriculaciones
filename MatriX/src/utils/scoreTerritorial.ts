@@ -82,33 +82,25 @@ export async function cargarProvinciasLookup(): Promise<Map<string, string>> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Streaming de df_mensual_marca_lugar.csv para crecimiento interanual.
-// Devuelve Map<provCode, Map<anio, totalMatriculaciones>>.
+// Streaming de df_mensual_marca_lugar.csv para series mensuales por provincia.
+// El CSV no incluye cod_ine; trae el nombre del municipio en la columna 'lugar'.
+// Cruzamos por nombre normalizado (mayusculas sin tildes) contra
+// df_mapa_densidad.csv (que si trae cod_ine) para obtener el codigo de
+// provincia.
+//
+// Devuelve Map<provCode, Map<"YYYY-MM", totalMatriculaciones>>.
 // ──────────────────────────────────────────────────────────────────────────
 export async function cargarTendenciaProvincial(
   provLookup: Map<string, string>,
   onProgress?: (msg: string) => void
-): Promise<Map<string, Map<number, number>>> {
-  onProgress?.("Cargando series temporales provinciales...");
-  // En desarrollo se usa el archivo local servido por Vite; en producción
-  // se inyecta una URL externa (Google Drive) vía VITE_CSV_MARCA_LUGAR_URL.
-  const CSV_URL =
-    (import.meta.env.VITE_CSV_MARCA_LUGAR_URL as string | undefined) ||
-    "/df_mensual_marca_lugar.csv";
-  const res = await fetch(CSV_URL);
-  if (!res.ok || !res.body) throw new Error("No se pudo cargar df_mensual_marca_lugar.csv");
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  let headers: string[] | null = null;
-  let idxCod = -1;
-  let idxFecha = -1;
-  let idxAno = -1;
-  let idxMat = -1;
-  let idxMarca = -1;
-
-  const byProv = new Map<string, Map<number, number>>();
+): Promise<Map<string, Map<string, number>>> {
+  // ── Helper de normalizacion (uppercase + sin tildes) ──
+  const normTexto = (s: unknown) =>
+    String(s ?? "")
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .trim();
 
   const splitCSVLine = (line: string): string[] => {
     const out: string[] = [];
@@ -126,40 +118,111 @@ export async function cargarTendenciaProvincial(
     return out;
   };
 
+  // ──────────────────────────────────────────────────────────────────────
+  // PASO 1: cargar df_mapa_densidad.csv una sola vez para construir
+  // muniNormalizado -> provCode.
+  // ──────────────────────────────────────────────────────────────────────
+  onProgress?.("Cargando referencia municipio→provincia...");
+  const muniToProv = new Map<string, string>();
+  {
+    const resMapa = await fetch("/df_mapa_densidad.csv");
+    if (!resMapa.ok) throw new Error("No se pudo cargar df_mapa_densidad.csv");
+    const text = await resMapa.text();
+    const lines = text.split(/\r?\n/);
+    if (lines.length < 2) throw new Error("df_mapa_densidad.csv vacio");
+    const header = splitCSVLine(lines[0]).map((h) => h.trim().replace(/^"|"$/g, ""));
+    const iCod = header.findIndex((h) => h.toLowerCase() === "cod_ine");
+    const iMuni = header.findIndex((h) => h.toLowerCase() === "municipio");
+    if (iCod < 0 || iMuni < 0) throw new Error("df_mapa_densidad.csv sin columnas cod_ine/municipio");
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      const cols = splitCSVLine(line);
+      const cod = String(cols[iCod] ?? "").padStart(5, "0");
+      if (cod.length !== 5) continue;
+      const provCode = cod.substring(0, 2);
+      if (!provLookup.has(provCode)) continue;
+      const key = normTexto(cols[iMuni]);
+      if (!key) continue;
+      // Si hay homonimos en provincias distintas, conserva el primero;
+      // las colisiones solo afectan a un numero pequeno de municipios y
+      // se diluyen al agregar a nivel provincial.
+      if (!muniToProv.has(key)) muniToProv.set(key, provCode);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // PASO 2: streaming de df_mensual_marca_lugar.csv usando 'lugar'.
+  // ──────────────────────────────────────────────────────────────────────
+  onProgress?.("Cargando series temporales provinciales...");
+  // En desarrollo se usa el archivo local servido por Vite; en producción
+  // se inyecta una URL externa (Vercel Blob) vía VITE_CSV_MARCA_LUGAR_URL.
+  const CSV_URL =
+    (import.meta.env.VITE_CSV_MARCA_LUGAR_URL as string | undefined) ||
+    "/df_mensual_marca_lugar.csv";
+  const res = await fetch(CSV_URL);
+  if (!res.ok || !res.body) throw new Error("No se pudo cargar df_mensual_marca_lugar.csv");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let headers: string[] | null = null;
+  let idxFecha = -1;
+  let idxAno = -1;
+  let idxMes = -1;
+  let idxMat = -1;
+  let idxMarca = -1;
+  let idxLugar = -1;
+
+  const byProv = new Map<string, Map<string, number>>();
+
   const processLine = (line: string) => {
     if (!line) return;
     if (!headers) {
       headers = splitCSVLine(line).map((h) => h.trim().replace(/^"|"$/g, ""));
-      idxCod = headers.findIndex((h) => h.toLowerCase() === "cod_ine");
       idxFecha = headers.findIndex((h) => h.toLowerCase().startsWith("fecha"));
-      idxAno = headers.findIndex((h) => h.toLowerCase() === "año" || h.toLowerCase() === "ano");
+      idxAno = headers.findIndex((h) => {
+        const lo = h.toLowerCase();
+        // soporta 'año', 'ano' y mojibakes tipo 'a?o' (cabecera mal codificada)
+        return lo === "año" || lo === "ano" || /^a.o$/.test(lo);
+      });
+      idxMes = headers.findIndex((h) => h.toLowerCase() === "mes");
       idxMat = headers.findIndex((h) => h.toLowerCase() === "matriculaciones");
       idxMarca = headers.findIndex((h) => h.toLowerCase() === "marca");
+      idxLugar = headers.findIndex((h) => h.toLowerCase() === "lugar");
       return;
     }
     const cols = splitCSVLine(line);
     const marca = idxMarca >= 0 ? (cols[idxMarca] ?? "").trim() : "";
     if (marca && marca.toUpperCase() === "TOTAL MARCAS") return; // evitar doble conteo
 
-    const cod = String(cols[idxCod] ?? "").padStart(5, "0");
-    if (cod.length !== 5) return;
-    const provCode = cod.substring(0, 2);
-    if (!provLookup.has(provCode)) return;
+    if (idxLugar < 0) return;
+    const provCode = muniToProv.get(normTexto(cols[idxLugar]));
+    if (!provCode) return;
 
+    // Año + mes: prioridad a fecha_mes (formato YYYY-MM-DD), luego columnas Año/Mes
     let ano: number | null = null;
-    if (idxAno >= 0) ano = parseNumLoose(cols[idxAno]);
-    if (!ano && idxFecha >= 0) {
+    let mes: number | null = null;
+    if (idxFecha >= 0) {
       const fecha = String(cols[idxFecha] ?? "").slice(0, 10);
-      if (/^\d{4}/.test(fecha)) ano = parseInt(fecha.slice(0, 4));
+      if (/^\d{4}-\d{2}/.test(fecha)) {
+        ano = parseInt(fecha.slice(0, 4));
+        mes = parseInt(fecha.slice(5, 7));
+      }
     }
-    if (!ano) return;
+    if ((!ano || !mes) && idxAno >= 0 && idxMes >= 0) {
+      ano = parseNumLoose(cols[idxAno]);
+      mes = parseNumLoose(cols[idxMes]);
+    }
+    if (!ano || !mes || mes < 1 || mes > 12) return;
 
     const mat = parseNumLoose(cols[idxMat]) ?? 0;
     if (!mat) return;
 
+    const ymKey = `${ano}-${String(mes).padStart(2, "0")}`;
     let m = byProv.get(provCode);
     if (!m) { m = new Map(); byProv.set(provCode, m); }
-    m.set(ano, (m.get(ano) ?? 0) + mat);
+    m.set(ymKey, (m.get(ymKey) ?? 0) + mat);
   };
 
   let chunks = 0;
@@ -186,7 +249,12 @@ export async function cargarTendenciaProvincial(
 export async function calcularScoreTerritorial(
   mapRows: MapDensityRow[],
   provLookup: Map<string, string>,
-  tendenciaProv: Map<string, Map<number, number>> | null,
+  // Compat: acepta el formato nuevo (TTM, claves "YYYY-MM") y el legacy
+  // anual (claves number) para no romper consumidores existentes.
+  tendenciaProv:
+    | Map<string, Map<string, number>>
+    | Map<string, Map<number, number>>
+    | null,
   onProgress?: (msg: string) => void
 ): Promise<ScoreRow[]> {
   onProgress?.("Agregando datos provinciales...");
@@ -223,6 +291,82 @@ export async function calcularScoreTerritorial(
     e.muniMax.push({ nombre: r.municipio, ratio: r.ratio_x1000 });
   }
 
+  // ──────────────────────────────────────────────────────────────────────
+  // Tendencia: TTM (trailing twelve months).
+  //
+  // Identificamos los 12 meses mas recientes con datos en el CSV y los
+  // 12 inmediatamente anteriores. Para cada provincia con presencia en los
+  // 24 meses calculamos:
+  //   crec = (sum_actual - sum_base) / sum_base * 100
+  // Las provincias con menos de 12 meses en cualquiera de los dos
+  // periodos quedan con crecimiento = 0 y son EXCLUIDAS del ranking de
+  // tendencia (no afectan al min-max y reciben score_tendencia neutro 50).
+  //
+  // Si en su lugar nos pasan el formato legacy anual (claves number),
+  // mantenemos el calculo antiguo (anioN vs anioN-2) por compatibilidad.
+  // ──────────────────────────────────────────────────────────────────────
+  let monthsCurrent: string[] = [];
+  let monthsBase: string[] = [];
+  let formatoTTM = false;
+
+  if (tendenciaProv && tendenciaProv.size > 0) {
+    // Detectar formato por el tipo de la primera clave del primer Map
+    const firstSerie = tendenciaProv.values().next().value as Map<unknown, number> | undefined;
+    if (firstSerie && firstSerie.size > 0) {
+      const firstKey = firstSerie.keys().next().value;
+      formatoTTM = typeof firstKey === "string";
+    }
+
+    if (formatoTTM) {
+      // Conjunto global de "YYYY-MM" presentes en el CSV
+      const allMonths = new Set<string>();
+      for (const m of (tendenciaProv as Map<string, Map<string, number>>).values()) {
+        for (const k of m.keys()) allMonths.add(k);
+      }
+      const sortedMonths = [...allMonths].sort();
+      if (sortedMonths.length >= 24) {
+        monthsCurrent = sortedMonths.slice(-12);
+        monthsBase = sortedMonths.slice(-24, -12);
+      }
+    }
+  }
+
+  const calcularCrecTTM = (provCode: string): { crec: number; valida: boolean } => {
+    if (!formatoTTM || !tendenciaProv || monthsCurrent.length !== 12 || monthsBase.length !== 12) {
+      return { crec: 0, valida: false };
+    }
+    const serie = (tendenciaProv as Map<string, Map<string, number>>).get(provCode);
+    if (!serie) return { crec: 0, valida: false };
+    let sumCur = 0;
+    let sumBase = 0;
+    for (const k of monthsCurrent) {
+      const v = serie.get(k);
+      if (v === undefined) return { crec: 0, valida: false };
+      sumCur += v;
+    }
+    for (const k of monthsBase) {
+      const v = serie.get(k);
+      if (v === undefined) return { crec: 0, valida: false };
+      sumBase += v;
+    }
+    if (sumBase <= 0) return { crec: 0, valida: false };
+    return { crec: ((sumCur - sumBase) / sumBase) * 100, valida: true };
+  };
+
+  const calcularCrecLegacy = (provCode: string): { crec: number; valida: boolean } => {
+    if (!tendenciaProv) return { crec: 0, valida: false };
+    const serie = tendenciaProv.get(provCode) as Map<number, number> | undefined;
+    if (!serie || serie.size === 0) return { crec: 0, valida: false };
+    const anios = Array.from(serie.keys()).sort((a, b) => a - b);
+    const anioN = anios[anios.length - 1];
+    const anioPrev = anioN - 2;
+    if (!serie.has(anioPrev)) return { crec: 0, valida: false };
+    const vN = serie.get(anioN) ?? 0;
+    const vP = serie.get(anioPrev) ?? 0;
+    if (vP <= 0) return { crec: 0, valida: false };
+    return { crec: ((vN - vP) / vP) * 100, valida: true };
+  };
+
   // ── Construir datos base por provincia ──
   type Base = {
     provincia: string;
@@ -230,6 +374,7 @@ export async function calcularScoreTerritorial(
     ratio_medio: number;
     mat_brutas: number;
     crecimiento: number;
+    tendencia_valida: boolean;
     anom_conf: string[];
     anom_pot: string[];
   };
@@ -240,21 +385,9 @@ export async function calcularScoreTerritorial(
       ? e.ratios.reduce((s, r) => s + r, 0) / e.ratios.length
       : 0;
 
-    // Tendencia interanual
-    let crecimiento = 0;
-    if (tendenciaProv) {
-      const seriePorAnio = tendenciaProv.get(provCode);
-      if (seriePorAnio && seriePorAnio.size > 0) {
-        const anios = Array.from(seriePorAnio.keys()).sort((a, b) => a - b);
-        const anioN = anios[anios.length - 1];
-        const anioPrev = anioN - 2;
-        if (seriePorAnio.has(anioPrev)) {
-          const vN = seriePorAnio.get(anioN) ?? 0;
-          const vP = seriePorAnio.get(anioPrev) ?? 0;
-          if (vP > 0) crecimiento = ((vN - vP) / vP) * 100;
-        }
-      }
-    }
+    const { crec: crecimiento, valida: tendenciaValida } = formatoTTM
+      ? calcularCrecTTM(provCode)
+      : calcularCrecLegacy(provCode);
 
     // Anomalias confirmadas (hardcoded)
     const anomConf: string[] = [];
@@ -282,6 +415,7 @@ export async function calcularScoreTerritorial(
       ratio_medio: ratioMedio,
       mat_brutas: e.matTotal,
       crecimiento,
+      tendencia_valida: tendenciaValida,
       anom_conf: anomConf,
       anom_pot: anomPot,
     });
@@ -293,12 +427,17 @@ export async function calcularScoreTerritorial(
   // Nota: para la dimension de mercado (matriculaciones brutas) aplicamos
   // logaritmo natural antes de normalizar, para amortiguar la cola larga
   // que generan Madrid y Barcelona y evitar que el resto colapse a ~0.
+  // La dimension de tendencia se calcula EXCLUSIVAMENTE sobre las
+  // provincias con tendencia valida (12+12 meses completos en TTM).
+  // Las invalidas reciben score_tendencia neutro = 50 sin afectar al
+  // min-max del resto.
   const ratios = base.map((b) => b.ratio_medio);
   const mats = base.map((b) => b.mat_brutas);
-  const crecs = base.map((b) => b.crecimiento);
+  const crecsValidos = base.filter((b) => b.tendencia_valida).map((b) => b.crecimiento);
   const rMin = Math.min(...ratios), rMax = Math.max(...ratios);
   const mMin = Math.min(...mats), mMax = Math.max(...mats);
-  const cMin = Math.min(...crecs), cMax = Math.max(...crecs);
+  const cMin = crecsValidos.length ? Math.min(...crecsValidos) : 0;
+  const cMax = crecsValidos.length ? Math.max(...crecsValidos) : 0;
 
   const normalize = (v: number, min: number, max: number) =>
     max > min ? ((v - min) / (max - min)) * 100 : 50;
@@ -316,7 +455,7 @@ export async function calcularScoreTerritorial(
   const filas: ScoreRow[] = base.map((b) => {
     const sDem = normalize(b.ratio_medio, rMin, rMax);
     const sMer = normalizeLog(b.mat_brutas, mMin, mMax);
-    const sTen = normalize(b.crecimiento, cMin, cMax);
+    const sTen = b.tendencia_valida ? normalize(b.crecimiento, cMin, cMax) : 50;
 
     const scoreBase = sDem * 0.4 + sMer * 0.3 + sTen * 0.25;
 
