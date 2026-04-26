@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "generado": "2026-04-26 15:34:51 CEST",
+    "metodologia": "Calibracion empirica sobre serie DGT 2021-2024 y serie anual 1990-2024. Eventos no calibrables basados en literatura especializada.",
+    "fuentes": ["Cantos-Sanchez et al. 2015", "BCE tipos 2022-2023", "DGT serie mensual 2021-2024"]
+  },
+  "eventos": {
+    "boom_postcrisis": {
+      "impacto_mensual": [643.1, 201.8, -173.3, -94.8, -469.3, -535.4, -215.6, 519.6, 157.3, 170.1, 46.7, -70.2],
+      "impacto_medio_anual": 15,
+      "tipo": "empirico",
+      "periodo_referencia": "2021-2022"
+    },
+    "campana_promocional": {
+      "impacto_mensual": [0, 0, 14.2, 0, 19, 14.3, 12.5, 0, 0, 0, 0, 0],
+      "impacto_medio_anual": 5,
+      "tipo": "empirico",
+      "periodo_referencia": "2021-2024"
+    },
+    "recesion_moderada": {
+      "impacto_mensual": [-8.9, -10.8, -13.1, -12.2, -14.2, -14.8, -13, -8.9, -11, -12.1, -12.1, -12.9],
+      "impacto_medio_anual": -12,
+      "tipo": "empirico_aproximado",
+      "periodo_referencia": "2020 distribuido por perfil 2019"
+    },
+    "plan_moves": {
+      "impacto_mensual": [6.5, 6.5, 9.7, 8.6, 6.5, 6.5, 3.2, 3.2, 6.5, 15.1, 12.9, 10.8],
+      "impacto_medio_anual": 8,
+      "tipo": "literatura",
+      "fuente": "Cantos-Sanchez et al. 2015"
+    },
+    "subida_tipos": {
+      "impacto_mensual": [-4.7, -4.7, -4.7, -4.7, -6.6, -6.6, -2.8, -2.8, -7.6, -8.5, -8.5, -9.5],
+      "impacto_medio_anual": -6,
+      "tipo": "literatura",
+      "fuente": "BCE 2022-2023"
+    },
+    "semiconductores": {
+      "impacto_mensual": [-7, -10, -13],
+      "impacto_medio_anual": -10,
+      "tipo": "literatura",
+      "duracion_meses": 3
+    }
+  }
+}

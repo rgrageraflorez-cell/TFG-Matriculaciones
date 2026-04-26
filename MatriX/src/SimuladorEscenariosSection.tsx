@@ -13,7 +13,8 @@ import {
 import type { PredictionRow } from "./types";
 import { formatInt, formatDec, formatMonth } from "./utils.tsx";
 import {
-  CATALOGO_EVENTOS,
+  CATALOGO_EVENTOS_DEFAULT,
+  cargarEscenariosCalibrados,
   calcularEscenario,
   resumenEscenario,
   kpisEscenario,
@@ -37,9 +38,18 @@ export default function SimuladorEscenariosSection({ predData, cutoffDate }: Pro
     campana_sectorial: false,
   });
 
+  // Catálogo "vivo": arranca con los vectores por defecto y se sustituye
+  // por los calibrados cuando se carga `escenarios_vectores.json`.
+  const [catalogo, setCatalogo] = useState<EventoCatalogo[]>(CATALOGO_EVENTOS_DEFAULT);
+  useEffect(() => {
+    let cancel = false;
+    cargarEscenariosCalibrados().then((c) => { if (!cancel) setCatalogo(c); });
+    return () => { cancel = true; };
+  }, []);
+
   const eventosActivos: EventoCatalogo[] = useMemo(
-    () => CATALOGO_EVENTOS.filter((e) => activos[e.id]),
-    [activos],
+    () => catalogo.filter((e) => activos[e.id]),
+    [catalogo, activos],
   );
 
   const escenario = useMemo(
@@ -79,7 +89,7 @@ export default function SimuladorEscenariosSection({ predData, cutoffDate }: Pro
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ── Columna izquierda: panel de eventos ── */}
         <div className="space-y-3">
-          {CATALOGO_EVENTOS.map((ev) => {
+          {catalogo.map((ev) => {
             const act = activos[ev.id];
             const badgeClass =
               ev.signo === "positivo"

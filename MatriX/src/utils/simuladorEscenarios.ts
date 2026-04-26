@@ -4,10 +4,15 @@
  * Simulador de escenarios macroeconómicos aplicados sobre la
  * predicción mensual Prophet (pred_prophet).
  *
- * Cada evento aporta un impacto base porcentual sobre la
- * predicción. Cuando se combinan varios eventos se aplica un
- * factor de amortiguación progresivo para evitar escenarios
- * irreales (1 evento = sin amortiguación; 5+ eventos = 60%).
+ * Cada evento aporta un vector mensual de impacto en %. Los vectores
+ * provienen de la calibración hecha en R (`calibrar_escenarios.R`)
+ * y se sirven como `/escenarios_vectores.json`. Si la fetch falla,
+ * el catálogo arranca con vectores constantes equivalentes a los
+ * impactos medios anuales originales.
+ *
+ * Cuando se combinan varios eventos se aplica un factor de
+ * amortiguación progresivo para evitar escenarios irreales
+ * (1 evento = sin amortiguación; 5+ eventos = 60%).
  * ────────────────────────────────────────────────────────────────
  */
 
@@ -26,9 +31,16 @@ export type EventoCatalogo = {
   id: EventoId;
   nombre: string;
   descripcion: string;
-  /** Impacto base mensual en porcentaje (ya normalizado) aplicado sobre la predicción base. */
-  impactoMensualPct: number;
-  /** Texto corto para mostrar como badge (p.ej. "+8% mensual", "-12% anual"). */
+  /**
+   * Vector de impacto mensual en porcentaje aplicado sobre la
+   * predicción base.
+   *  - Para eventos con `aplicacionPosicional = false` (mayoría):
+   *    12 valores indexados por calendar month (idx 0 = enero, 11 = diciembre).
+   *  - Para `aplicacionPosicional = true` (semiconductores):
+   *    valores aplicados a los primeros N meses del forecast en orden.
+   */
+  impactoMensualPct: number[];
+  /** Texto corto para mostrar como badge (p.ej. "+8% medio anual"). */
   impactoLabel: string;
   /** Duración: número de meses desde el inicio del forecast; null = todos. */
   duracionMeses: number | null;
@@ -36,6 +48,12 @@ export type EventoCatalogo = {
   duracionLabel: string;
   /** "positivo" | "negativo" — para colorear badges y bordes. */
   signo: "positivo" | "negativo";
+  /**
+   * Si true, los valores del vector se aplican posicionalmente
+   * (índice 0 = primer mes del forecast). Solo para semiconductores.
+   * Si false, se indexan por calendar month del forecast.
+   */
+  aplicacionPosicional: boolean;
 };
 
 export type PrediccionEscenarioRow = PredictionRow & {
@@ -49,69 +67,154 @@ export type ResumenEscenario = {
   eventosActivos: EventoCatalogo[];
 };
 
-// ── Catálogo de eventos ────────────────────────────────────────
-export const CATALOGO_EVENTOS: EventoCatalogo[] = [
+// ── Catálogo por defecto ───────────────────────────────────────
+// Vectores constantes equivalentes al impacto medio anual original.
+// Se sustituyen al vuelo cuando se carga `escenarios_vectores.json`.
+const v12 = (x: number): number[] => Array(12).fill(x);
+
+export const CATALOGO_EVENTOS_DEFAULT: EventoCatalogo[] = [
   {
     id: "moves",
     nombre: "Plan MOVES activo",
     descripcion: "Incentivo público a la compra de vehículos electrificados.",
-    impactoMensualPct: 8,
-    impactoLabel: "+8% mensual",
+    impactoMensualPct: v12(8),
+    impactoLabel: "+8% medio anual",
     duracionMeses: null,
     duracionLabel: "Todo el forecast",
     signo: "positivo",
+    aplicacionPosicional: false,
   },
   {
     id: "tipos_bce",
     nombre: "Subida de tipos BCE (+100pb)",
     descripcion: "Contracción del crédito al consumo y financiación automovilística.",
-    impactoMensualPct: -6,
-    impactoLabel: "-6% mensual",
+    impactoMensualPct: v12(-6),
+    impactoLabel: "−6% medio anual",
     duracionMeses: null,
     duracionLabel: "Todo el forecast",
     signo: "negativo",
+    aplicacionPosicional: false,
   },
   {
     id: "recesion",
     nombre: "Recesión moderada (-2% PIB)",
-    descripcion: "Calibrado sobre la contracción 2008-2009 de la serie histórica.",
-    impactoMensualPct: -12 / 12, // -1% mensual equivalente
-    impactoLabel: "-12% anual",
+    descripcion: "Calibrado sobre la contracción 2020 de la serie histórica.",
+    impactoMensualPct: v12(-12),
+    impactoLabel: "−12% medio anual",
     duracionMeses: null,
     duracionLabel: "Todo el forecast",
     signo: "negativo",
+    aplicacionPosicional: false,
   },
   {
     id: "boom",
     nombre: "Boom post-crisis",
     descripcion: "Calibrado sobre la recuperación 2021-2022 de la serie histórica.",
-    impactoMensualPct: 15 / 12, // +1.25% mensual equivalente
-    impactoLabel: "+15% anual",
+    impactoMensualPct: v12(15),
+    impactoLabel: "+15% medio anual",
     duracionMeses: null,
     duracionLabel: "Todo el forecast",
     signo: "positivo",
+    aplicacionPosicional: false,
   },
   {
     id: "semiconductores",
     nombre: "Escasez de semiconductores",
     descripcion: "Impacto transitorio sobre la disponibilidad de vehículos.",
-    impactoMensualPct: -10,
-    impactoLabel: "-10% mensual",
+    impactoMensualPct: [-7, -10, -13],
+    impactoLabel: "media −10% (3 meses)",
     duracionMeses: 3,
     duracionLabel: "Primeros 3 meses",
     signo: "negativo",
+    aplicacionPosicional: true,
   },
   {
     id: "campana_sectorial",
     nombre: "Campaña promocional sectorial",
     descripcion: "Efecto de campañas coordinadas de fabricantes y concesionarios.",
-    impactoMensualPct: 5,
-    impactoLabel: "+5% mensual",
+    impactoMensualPct: v12(5),
+    impactoLabel: "+5% medio anual",
     duracionMeses: null,
     duracionLabel: "Todo el forecast",
     signo: "positivo",
+    aplicacionPosicional: false,
   },
 ];
+
+/** Catálogo "vivo" — se actualiza tras cargar el JSON calibrado. */
+export const CATALOGO_EVENTOS: EventoCatalogo[] = CATALOGO_EVENTOS_DEFAULT.map((e) => ({
+  ...e,
+  impactoMensualPct: [...e.impactoMensualPct],
+}));
+
+// ── Carga del JSON calibrado ───────────────────────────────────
+// Map id de UI → clave en el JSON.
+const ID_A_JSON_KEY: Record<EventoId, string> = {
+  moves: "plan_moves",
+  tipos_bce: "subida_tipos",
+  recesion: "recesion_moderada",
+  boom: "boom_postcrisis",
+  semiconductores: "semiconductores",
+  campana_sectorial: "campana_promocional",
+};
+
+type EscenariosJson = {
+  metadata?: { generado?: string; metodologia?: string; fuentes?: string[] };
+  eventos: Record<
+    string,
+    {
+      impacto_mensual: number[];
+      impacto_medio_anual?: number;
+      tipo?: string;
+      periodo_referencia?: string;
+      fuente?: string;
+      duracion_meses?: number;
+    }
+  >;
+};
+
+let cachePromise: Promise<EventoCatalogo[]> | null = null;
+
+export function cargarEscenariosCalibrados(): Promise<EventoCatalogo[]> {
+  if (cachePromise) return cachePromise;
+  cachePromise = (async () => {
+    try {
+      const res = await fetch("/escenarios_vectores.json", { cache: "no-cache" });
+      if (!res.ok) return CATALOGO_EVENTOS_DEFAULT;
+      const data: EscenariosJson = await res.json();
+      const merged = CATALOGO_EVENTOS_DEFAULT.map((e) => {
+        const key = ID_A_JSON_KEY[e.id];
+        const cal = data.eventos?.[key];
+        if (!cal || !Array.isArray(cal.impacto_mensual) || cal.impacto_mensual.length === 0) {
+          return e;
+        }
+        const vec = cal.impacto_mensual.map(Number);
+        const media = vec.reduce((s, v) => s + v, 0) / vec.length;
+        const target = cal.impacto_medio_anual ?? media;
+        const labelNum = Number(target.toFixed(1));
+        const sign = labelNum >= 0 ? "+" : "−";
+        const absStr = Math.abs(labelNum).toFixed(labelNum % 1 === 0 ? 0 : 1);
+        const label =
+          e.aplicacionPosicional
+            ? `media ${sign}${absStr}% (${vec.length} meses)`
+            : `${sign}${absStr}% medio anual`;
+        return {
+          ...e,
+          impactoMensualPct: vec,
+          impactoLabel: label,
+        };
+      });
+      // Mutamos también la export viva por si algún consumidor la lee tarde.
+      for (let i = 0; i < merged.length; i++) {
+        CATALOGO_EVENTOS[i] = merged[i];
+      }
+      return merged;
+    } catch {
+      return CATALOGO_EVENTOS_DEFAULT;
+    }
+  })();
+  return cachePromise;
+}
 
 // ── Amortiguación ──────────────────────────────────────────────
 export function factorAmortiguacion(numEventos: number): number {
@@ -125,6 +228,26 @@ function esForecast(r: PredictionRow): boolean {
       r.tipo_periodo.toLowerCase() !== "histórico") return true;
   // Fallback: forecast si real es null pero hay predicción
   return r.real === null && (r.pred_prophet !== null || r.prediccion !== null);
+}
+
+// Lee el % aplicable de un evento dado un mes de forecast (índice
+// posicional dentro del horizonte y calendar month del row).
+function impactoEventoMes(
+  ev: EventoCatalogo,
+  forecastIdx: number,
+  calendarMonth: number /* 1..12 */,
+): number {
+  const vec = ev.impactoMensualPct;
+  if (!vec || vec.length === 0) return 0;
+  if (ev.aplicacionPosicional) {
+    if (forecastIdx >= vec.length) return 0;
+    return vec[forecastIdx];
+  }
+  // duracionMeses limita el horizonte (semánticamente solo lo usaba
+  // semiconductores, pero lo respetamos para futuros eventos).
+  if (ev.duracionMeses !== null && forecastIdx >= ev.duracionMeses) return 0;
+  const idx = Math.max(1, Math.min(12, calendarMonth)) - 1;
+  return vec[idx] ?? 0;
 }
 
 // ── Cálculo principal ──────────────────────────────────────────
@@ -151,12 +274,10 @@ export function calcularEscenario(
       return { ...r, pred_escenario: null };
     }
     const idx = forecastIdxByFecha.get(r.fecha_mes) ?? 0;
+    const cm = parseInt(r.fecha_mes.slice(5, 7), 10) || 1;
     let impactoTotal = 0;
     for (const ev of eventosActivos) {
-      const activoEsteMes =
-        ev.duracionMeses === null ? true : idx < ev.duracionMeses;
-      if (!activoEsteMes) continue;
-      impactoTotal += ev.impactoMensualPct * factor;
+      impactoTotal += impactoEventoMes(ev, idx, cm) * factor;
     }
     const ajustada = r.pred_prophet * (1 + impactoTotal / 100);
     return { ...r, pred_escenario: ajustada };
@@ -171,15 +292,17 @@ export function resumenEscenario(
   const N = eventosActivos.length;
   const factor = factorAmortiguacion(N);
 
-  // Impacto medio: para cada mes de forecast sumamos los impactos activos y promediamos
-  const forecastRows = predicciones.filter(esForecast);
+  const forecastRows = predicciones
+    .filter(esForecast)
+    .sort((a, b) => a.fecha_mes.localeCompare(b.fecha_mes));
   const nMeses = Math.max(forecastRows.length, 1);
+
   let sumaImpactos = 0;
   if (N > 0) {
     for (let i = 0; i < forecastRows.length; i++) {
+      const cm = parseInt(forecastRows[i].fecha_mes.slice(5, 7), 10) || 1;
       for (const ev of eventosActivos) {
-        const activo = ev.duracionMeses === null ? true : i < ev.duracionMeses;
-        if (activo) sumaImpactos += ev.impactoMensualPct * factor;
+        sumaImpactos += impactoEventoMes(ev, i, cm) * factor;
       }
     }
   }
