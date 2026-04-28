@@ -14,6 +14,7 @@ import { scaleQuantile } from "d3-scale";
 import type { MonthlyAggRow, MonthlyBrandRow, MapDensityRow, GeoJsonType } from "./types";
 import { parseNumber, normalizeName, formatInt, formatDec, formatMonth, formatISODate, fetchCsv, seriesTooltip } from "./utils.tsx";
 import { generarInformeTerritorial } from "./utils/generarInformeTerritorial";
+import GruposEmpresarialesSection from "./GruposEmpresarialesSection";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -306,6 +307,9 @@ export default function DescriptivaTab() {
           </ResponsiveContainer>
         </div>
       </section>
+
+      {/* Análisis por grupo empresarial */}
+      <GruposEmpresarialesSection brandData={brandData} dateRange={dateRange} />
 
       {/* Map */}
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">

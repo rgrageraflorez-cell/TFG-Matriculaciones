@@ -21,6 +21,7 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas-pro";
 import Papa from "papaparse";
 import { calcularScoreTerritorial, type ScoreRow } from "./scoreTerritorial";
+import { getGrupo } from "./gruposEmpresariales";
 import {
   calcularEscenario,
   factorAmortiguacion,
@@ -126,6 +127,9 @@ type ResumenProvincia = {
   // Marcas provincial
   top10MarcasProv: { marca: string; matriculaciones: number; cuota: number; posicionProv: number; posicionNac: number; diff: number }[];
   interpretacionMixMarcas: string;
+  // Grupos empresariales provincial (consolidacion marca -> grupo)
+  gruposProv: { grupo: string; total: number; cuota: number }[];
+  interpretacionGruposProv: string;
   // Municipal
   municipiosRatioDesc: MunicipioProv[];
   municipiosVolumenDesc: MunicipioProv[];
@@ -1250,7 +1254,42 @@ function htmlSeccion5(r: ResumenProvincia): string {
       <p style="margin:18px 0 0 0; padding:14px 18px; background:${PALETA.cardBg}; border-left:3px solid ${PALETA.gold}; border-radius:6px; font-size:11px; line-height:1.55; color:${PALETA.textDark};">
         ${r.interpretacionMixMarcas}
       </p>
+
+      ${htmlSubseccionGruposEmpresariales(r)}
     </div>`;
+}
+
+// --- SUBSECCION grupos empresariales (dentro de Seccion 5) -------------------
+function htmlSubseccionGruposEmpresariales(r: ResumenProvincia): string {
+  if (!r.gruposProv || r.gruposProv.length === 0) {
+    return `
+      <h3 style="margin:22px 0 8px 0; font-size:13px; font-weight:600; color:${PALETA.navy};">Análisis por grupo empresarial</h3>
+      <p style="margin:0; font-size:11px; color:${PALETA.text};">Sin datos suficientes para consolidar grupos en esta provincia.</p>
+    `;
+  }
+  const filas = r.gruposProv.map((g, i) => `
+    <tr style="background:${i % 2 === 0 ? "#ffffff" : PALETA.cardBg}; border-bottom:1px solid ${PALETA.borde};">
+      <td style="padding:8px 10px; color:${PALETA.text}; font-size:10px; width:30px; text-align:center;">${i + 1}</td>
+      <td style="padding:8px 10px; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${escapeHtml(g.grupo)}</td>
+      <td style="padding:8px 10px; text-align:right; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${fmtInt(g.total)}</td>
+      <td style="padding:8px 10px; text-align:right; font-size:10px; font-weight:700; color:${PALETA.navy};">${fmtDec(g.cuota, 1)}%</td>
+    </tr>`).join("");
+  return `
+    <h3 style="margin:22px 0 10px 0; font-size:13px; font-weight:600; color:${PALETA.navy};">Análisis por grupo empresarial</h3>
+    <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
+      <thead style="background:${PALETA.navy};">
+        <tr>
+          <th style="padding:9px 10px; text-align:center; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600; width:30px;">#</th>
+          <th style="padding:9px 10px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">GRUPO</th>
+          <th style="padding:9px 10px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MATRICULACIONES</th>
+          <th style="padding:9px 10px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">CUOTA</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p style="margin:14px 0 0 0; padding:14px 18px; background:${PALETA.cardBg}; border-left:3px solid ${PALETA.navy}; border-radius:6px; font-size:11px; line-height:1.55; color:${PALETA.textDark};">
+      ${r.interpretacionGruposProv}
+    </p>`;
 }
 
 // --- SECCION 6 ---------------------------------------------------------------
@@ -1738,6 +1777,37 @@ export async function generarInformeTerritorial(
     };
   });
 
+  // ── Consolidacion por grupo empresarial (provincia) ──
+  const gruposAcum = new Map<string, number>();
+  for (const [marca, total] of filtrado.marcaTotal) {
+    const g = getGrupo(marca);
+    gruposAcum.set(g, (gruposAcum.get(g) ?? 0) + total);
+  }
+  const totalProvGrupos = [...gruposAcum.values()].reduce((s, v) => s + v, 0);
+  const gruposProv = [...gruposAcum.entries()]
+    .map(([grupo, total]) => ({
+      grupo,
+      total,
+      cuota: totalProvGrupos > 0 ? (total / totalProvGrupos) * 100 : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  let interpretacionGruposProv = "";
+  if (gruposProv.length === 0) {
+    interpretacionGruposProv = `No se han podido consolidar grupos empresariales para ${escapeHtml(provincia)} en este período.`;
+  } else {
+    const g1 = gruposProv[0];
+    const g2 = gruposProv[1];
+    const top3 = gruposProv.slice(0, 3).reduce((s, g) => s + g.cuota, 0);
+    const concentrado = top3 >= 60;
+    interpretacionGruposProv =
+      `El mercado provincial está dominado por <strong style="color:${PALETA.navy};">${escapeHtml(g1.grupo)}</strong> ` +
+      `con una cuota del <strong>${fmtDec(g1.cuota, 1)}%</strong>` +
+      (g2 ? `, seguido de <strong>${escapeHtml(g2.grupo)}</strong> con <strong>${fmtDec(g2.cuota, 1)}%</strong>` : "") +
+      `. Los tres primeros grupos concentran el <strong>${fmtDec(top3, 1)}%</strong> del mercado provincial, ` +
+      `lo que indica un mercado <strong style="color:${concentrado ? PALETA.peligro : PALETA.exito};">${concentrado ? "concentrado" : "competitivo"}</strong>.`;
+  }
+
   const liderProv = top10MarcasProv[0];
   const liderNac = [...nacRanking.entries()].find(([, p]) => p === 1)?.[0] ?? "";
   const interpretacionMixMarcas = !liderProv
@@ -1925,6 +1995,8 @@ export async function generarInformeTerritorial(
     introTerritorial,
     top10MarcasProv,
     interpretacionMixMarcas,
+    gruposProv,
+    interpretacionGruposProv,
     municipiosRatioDesc,
     municipiosVolumenDesc,
     municipiosRatioAscFiltrado,
