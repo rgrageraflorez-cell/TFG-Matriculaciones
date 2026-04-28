@@ -268,10 +268,18 @@ async function capturarYAnadirAlPdf(
   numeroPaginaInicial: number,
   dibujarHeader: boolean
 ): Promise<number> {
+  // Captura a triple resolución para texto nítido. Se exporta como PNG sin
+  // compresión de pérdida y se le pasa el flag FASTZIP a jsPDF.
   const canvas = await html2canvas(nodo, {
-    scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false,
+    scale: 3,
+    useCORS: true,
+    allowTaint: false,
+    backgroundColor: "#FFFFFF",
+    logging: false,
+    imageTimeout: 0,
+    removeContainer: true,
   });
-  const imgData = canvas.toDataURL("image/jpeg", 0.92);
+  const imgData = canvas.toDataURL("image/png", 1.0);
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const margenSup = dibujarHeader ? 14 : 0;
@@ -283,14 +291,14 @@ async function capturarYAnadirAlPdf(
 
   if (imgH <= areaH) {
     if (dibujarHeader) dibujarCabecera(pdf, cabecera);
-    pdf.addImage(imgData, "JPEG", 0, margenSup, imgW, imgH);
+    pdf.addImage(imgData, "PNG", 0, margenSup, imgW, imgH, undefined, "FAST");
     if (dibujarHeader) dibujarPie(pdf, numeroPaginaInicial);
     return numeroPaginaInicial + 1;
   }
 
   // Paginacion automatica
-  const scale = canvas.width / imgW;
-  const sliceHpx = areaH * scale;
+  const scaleFactor = canvas.width / imgW;
+  const sliceHpx = areaH * scaleFactor;
   let offsetPx = 0;
   let paginaActual = numeroPaginaInicial;
   let primeraIter = true;
@@ -304,9 +312,9 @@ async function capturarYAnadirAlPdf(
     if (ctx) {
       ctx.drawImage(canvas, 0, offsetPx, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
     }
-    const sliceData = off.toDataURL("image/jpeg", 0.92);
+    const sliceData = off.toDataURL("image/png", 1.0);
     if (dibujarHeader) dibujarCabecera(pdf, cabecera);
-    pdf.addImage(sliceData, "JPEG", 0, margenSup, imgW, sliceH / scale);
+    pdf.addImage(sliceData, "PNG", 0, margenSup, imgW, sliceH / scaleFactor, undefined, "FAST");
     if (dibujarHeader) dibujarPie(pdf, paginaActual);
     offsetPx += sliceH;
     paginaActual++;
@@ -846,23 +854,38 @@ function calcularRankingProvincial(
 
 function cabeceraSeccion(numero: number, titulo: string): string {
   return `
-    <div style="display:flex; align-items:stretch; margin-bottom:20px;">
-      <div style="width:6px; background:${PALETA.gold}; border-radius:3px; margin-right:14px;"></div>
-      <div style="padding:4px 0;">
-        <p style="margin:0; font-size:11px; color:${PALETA.gold}; letter-spacing:2px; font-weight:600;">SECCIÓN ${numero}</p>
-        <h2 style="margin:4px 0 0 0; font-size:20px; color:${PALETA.navy}; font-weight:700; letter-spacing:-0.2px;">${escapeHtml(titulo)}</h2>
-      </div>
+    <div style="display:flex; align-items:center; margin-bottom:16px; padding-bottom:10px; border-bottom:2px solid ${PALETA.navy};">
+      <span style="font-size:11px; font-weight:700; color:#C4922A; text-transform:uppercase; letter-spacing:0.08em; margin-right:10px;">Sección ${numero}</span>
+      <h2 style="margin:0; font-size:15px; font-weight:600; color:${PALETA.navy};">${escapeHtml(titulo)}</h2>
     </div>`;
 }
 
 function kpiCard(label: string, value: string, hint = ""): string {
   return `
-    <div style="padding:16px; background:${PALETA.cardBg}; border-left:4px solid ${PALETA.gold}; border-radius:8px; min-width:0;">
-      <p style="margin:0; font-size:10px; color:${PALETA.text}; letter-spacing:1.2px; font-weight:500; text-transform:uppercase;">${escapeHtml(label)}</p>
-      <p style="margin:8px 0 2px 0; font-size:24px; color:${PALETA.navy}; font-weight:700; line-height:1.1;">${escapeHtml(value)}</p>
-      ${hint ? `<p style="margin:2px 0 0 0; font-size:10px; color:${PALETA.text};">${escapeHtml(hint)}</p>` : ""}
+    <div style="flex:1; background-color:#FFFFFF; border:1px solid ${PALETA.borde}; border-left:3px solid ${PALETA.navy}; padding:14px 16px; border-radius:3px;">
+      <p style="margin:0 0 6px 0; font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:#6B7280;">${escapeHtml(label)}</p>
+      <p style="margin:0; font-size:22px; font-weight:700; color:${PALETA.navy}; line-height:1;">${escapeHtml(value)}</p>
+      ${hint ? `<p style="margin:4px 0 0 0; font-size:11px; font-weight:500; color:${PALETA.text};">${escapeHtml(hint)}</p>` : ""}
     </div>`;
 }
+
+// ============================================================================
+// SISTEMA EJECUTIVO DE TABLAS (consistente con la guia visual)
+// ============================================================================
+const TABLE_STYLE  = `width:100%; border-collapse:collapse; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:11px; margin-bottom:16px;`;
+const THEAD_STYLE  = `background-color:${PALETA.navy}; color:#FFFFFF;`;
+const TH_STYLE     = `padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;`;
+const TH_CENTER    = TH_STYLE.replace("text-align:left", "text-align:center");
+const TH_RIGHT     = TH_STYLE.replace("text-align:left", "text-align:right");
+const TD_STYLE     = `padding:9px 12px; border-bottom:1px solid ${PALETA.borde}; color:${PALETA.textDark}; font-size:11px; vertical-align:middle;`;
+const TD_FIRST     = `padding:9px 12px; border-bottom:1px solid ${PALETA.borde}; color:${PALETA.navy}; font-size:11px; font-weight:500; vertical-align:middle;`;
+const TD_RIGHT     = TD_STYLE.replace("vertical-align:middle", "text-align:right; vertical-align:middle");
+const TD_CENTER    = TD_STYLE.replace("vertical-align:middle", "text-align:center; vertical-align:middle");
+const TD_POSITIVE  = TD_STYLE.replace(`color:${PALETA.textDark}`, `color:${PALETA.exito}; font-weight:600`);
+const TD_NEGATIVE  = TD_STYLE.replace(`color:${PALETA.textDark}`, `color:${PALETA.peligro}; font-weight:600`);
+const ROW_BG_EVEN  = "#F7F7F5";
+const ROW_BG_ODD   = "#FFFFFF";
+function rowBg(i: number): string { return i % 2 === 0 ? ROW_BG_ODD : ROW_BG_EVEN; }
 
 function parrafoIntro(texto: string): string {
   return `<p style="margin:0 0 18px 0; padding:14px 18px; background:${PALETA.cardBg}; border-left:3px solid ${PALETA.navy}; border-radius:6px; font-size:11px; line-height:1.55; color:${PALETA.textDark};">${texto}</p>`;
@@ -1028,18 +1051,18 @@ function htmlSeccion2(r: ResumenProvincia): string {
   // Tabla alertas Motor 1
   const alertasFilas = r.alertasMotor1.length ? r.alertasMotor1.map((a, i) => `
     <tr style="background:${i % 2 === 0 ? "#ffffff" : PALETA.cardBg};">
-      <td style="padding:8px 12px; color:${PALETA.navy}; font-weight:600; font-size:10px;">${escapeHtml(a.tipo)}</td>
-      <td style="padding:8px 12px; color:${PALETA.textDark}; font-size:10px;">${escapeHtml(a.mes)}</td>
-      <td style="padding:8px 12px; color:${PALETA.textDark}; font-size:10px; text-align:right; font-weight:600;">${fmtInt(Math.round(a.valor))}</td>
-      <td style="padding:8px 12px; color:${PALETA.text}; font-size:10px;">${escapeHtml(a.recomendacion)}</td>
+      <td style="padding:9px 12px; color:${PALETA.navy}; font-weight:600; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(a.tipo)}</td>
+      <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(a.mes)}</td>
+      <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; text-align:right; font-weight:600; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtInt(Math.round(a.valor))}</td>
+      <td style="padding:9px 12px; color:${PALETA.text}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(a.recomendacion)}</td>
     </tr>`).join("") : `<tr><td colspan="4" style="padding:14px; text-align:center; color:${PALETA.text}; font-size:10px;">No se han detectado eventos relevantes en el horizonte de predicción.</td></tr>`;
 
   // Patron intramensual
   const patronFilas = r.patronSemanal.map((p) => `
     <tr style="border-bottom:1px solid ${PALETA.borde};">
-      <td style="padding:7px 12px; text-transform:capitalize; color:${PALETA.textDark}; font-size:10px;">${escapeHtml(p.dia)}</td>
-      <td style="padding:7px 12px; text-align:right; font-weight:600; color:${PALETA.navy}; font-size:10px;">${fmtDec(p.pesoW, 3)}</td>
-      <td style="padding:7px 12px; text-align:right; color:${PALETA.text}; font-size:10px;">${fmtDec(p.pctAprox, 1)}%</td>
+      <td style="padding:9px 12px; text-transform:capitalize; color:${PALETA.textDark}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(p.dia)}</td>
+      <td style="padding:9px 12px; text-align:right; font-weight:600; color:${PALETA.navy}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtDec(p.pesoW, 3)}</td>
+      <td style="padding:9px 12px; text-align:right; color:${PALETA.text}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtDec(p.pctAprox, 1)}%</td>
     </tr>`).join("");
 
   return `
@@ -1052,13 +1075,13 @@ function htmlSeccion2(r: ResumenProvincia): string {
       ${leyenda}
 
       <h3 style="margin:22px 0 10px 0; font-size:13px; font-weight:600; color:${PALETA.navy};">Alertas automáticas (Motor 1)</h3>
-      <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
-        <thead style="background:${PALETA.navy};">
+      <table style="${TABLE_STYLE}">
+        <thead style="${THEAD_STYLE}">
           <tr>
-            <th style="padding:9px 12px; text-align:left; color:#ffffff; font-weight:600; font-size:9px; letter-spacing:1px;">TIPO</th>
-            <th style="padding:9px 12px; text-align:left; color:#ffffff; font-weight:600; font-size:9px; letter-spacing:1px;">MES AFECTADO</th>
-            <th style="padding:9px 12px; text-align:right; color:#ffffff; font-weight:600; font-size:9px; letter-spacing:1px;">VALOR PREVISTO</th>
-            <th style="padding:9px 12px; text-align:left; color:#ffffff; font-weight:600; font-size:9px; letter-spacing:1px;">RECOMENDACIÓN</th>
+            <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">TIPO</th>
+            <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MES AFECTADO</th>
+            <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">VALOR PREVISTO</th>
+            <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">RECOMENDACIÓN</th>
           </tr>
         </thead>
         <tbody>${alertasFilas}</tbody>
@@ -1068,12 +1091,12 @@ function htmlSeccion2(r: ResumenProvincia): string {
       <p style="margin:0 0 10px 0; font-size:10px; color:${PALETA.text};">
         Pesos <code style="background:${PALETA.cardBg}; padding:1px 4px; border-radius:3px;">w_opt</code> del modelo MD agregados por día laborable (media sobre la serie completa), ordenados de mayor a menor peso.
       </p>
-      <table style="width:70%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
-        <thead style="background:${PALETA.navy};">
+      <table style="${TABLE_STYLE} width:70%;">
+        <thead style="${THEAD_STYLE}">
           <tr>
-            <th style="padding:9px 12px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">DÍA</th>
-            <th style="padding:9px 12px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">PESO w_opt MEDIO</th>
-            <th style="padding:9px 12px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">% APROX.</th>
+            <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">DÍA</th>
+            <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">PESO w_opt MEDIO</th>
+            <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">% APROX.</th>
           </tr>
         </thead>
         <tbody>${patronFilas}</tbody>
@@ -1091,10 +1114,10 @@ function htmlSeccion3(r: ResumenProvincia): string {
     const barW = (b.cuota / cuotaMax) * 100;
     return `
       <tr style="background:${i % 2 === 0 ? "#ffffff" : PALETA.cardBg}; border-bottom:1px solid ${PALETA.borde};">
-        <td style="padding:8px 12px; color:${PALETA.text}; font-size:10px; width:32px; text-align:center;">${b.posicion}</td>
-        <td style="padding:8px 12px; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${escapeHtml(b.marca)}</td>
-        <td style="padding:8px 12px; text-align:right; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${fmtInt(b.matriculaciones)}</td>
-        <td style="padding:8px 12px; width:200px;">
+        <td style="padding:9px 12px; color:${PALETA.text}; font-size:11px; width:32px; text-align:center; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${b.posicion}</td>
+        <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; font-weight:600; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(b.marca)}</td>
+        <td style="padding:9px 12px; text-align:right; color:${PALETA.textDark}; font-size:11px; font-weight:600; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtInt(b.matriculaciones)}</td>
+        <td style="padding:9px 12px; width:200px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle; color:${PALETA.textDark};">
           <div style="display:flex; align-items:center; gap:8px;">
             <div style="flex:1; height:7px; background:${PALETA.borde}; border-radius:4px; overflow:hidden;">
               <div style="width:${barW}%; height:100%; background:${PALETA.gold};"></div>
@@ -1125,13 +1148,13 @@ function htmlSeccion3(r: ResumenProvincia): string {
       ${parrafoIntro(r.introMarcas)}
 
       <h3 style="margin:4px 0 10px 0; font-size:13px; font-weight:600; color:${PALETA.navy};">Top 10 marcas nacionales — ${r.anio}</h3>
-      <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
-        <thead style="background:${PALETA.navy};">
+      <table style="${TABLE_STYLE}">
+        <thead style="${THEAD_STYLE}">
           <tr>
-            <th style="padding:9px 12px; text-align:center; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600; width:32px;">#</th>
-            <th style="padding:9px 12px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MARCA</th>
-            <th style="padding:9px 12px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MATRICULACIONES</th>
-            <th style="padding:9px 12px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">CUOTA DE MERCADO</th>
+            <th style="padding:10px 12px; text-align:center; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF; width:32px;">#</th>
+            <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MARCA</th>
+            <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MATRICULACIONES</th>
+            <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">CUOTA DE MERCADO</th>
           </tr>
         </thead>
         <tbody>${filas}</tbody>
@@ -1212,10 +1235,10 @@ function htmlSeccion5(r: ResumenProvincia): string {
         : `<span style="color:${PALETA.text};">=</span>`;
     return `
       <tr style="background:${i % 2 === 0 ? "#ffffff" : PALETA.cardBg}; border-bottom:1px solid ${PALETA.borde};">
-        <td style="padding:8px 10px; color:${PALETA.text}; font-size:10px; width:30px; text-align:center;">${b.posicionProv}</td>
-        <td style="padding:8px 10px; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${escapeHtml(b.marca)}</td>
-        <td style="padding:8px 10px; text-align:right; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${fmtInt(b.matriculaciones)}</td>
-        <td style="padding:8px 10px; width:160px;">
+        <td style="padding:9px 12px; color:${PALETA.text}; font-size:11px; width:30px; text-align:center; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${b.posicionProv}</td>
+        <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; font-weight:600; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(b.marca)}</td>
+        <td style="padding:9px 12px; text-align:right; color:${PALETA.textDark}; font-size:11px; font-weight:600; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtInt(b.matriculaciones)}</td>
+        <td style="padding:9px 12px; width:160px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle; color:${PALETA.textDark};">
           <div style="display:flex; align-items:center; gap:8px;">
             <div style="flex:1; height:7px; background:${PALETA.borde}; border-radius:4px; overflow:hidden;">
               <div style="width:${barW}%; height:100%; background:${PALETA.gold};"></div>
@@ -1223,7 +1246,7 @@ function htmlSeccion5(r: ResumenProvincia): string {
             <span style="font-size:10px; font-weight:600; color:${PALETA.navy}; min-width:38px; text-align:right;">${fmtDec(b.cuota, 1)}%</span>
           </div>
         </td>
-        <td style="padding:8px 10px; text-align:center; font-size:10px;">${diffHtml}</td>
+        <td style="padding:9px 12px; text-align:center; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle; color:${PALETA.textDark};">${diffHtml}</td>
       </tr>`;
   }).join("");
 
@@ -1237,14 +1260,14 @@ function htmlSeccion5(r: ResumenProvincia): string {
           <p style="margin:0; font-size:11px; color:${PALETA.text};">No se encontraron datos de marcas para esta provincia en el año analizado.</p>
         </div>
       ` : `
-        <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
-          <thead style="background:${PALETA.navy};">
+        <table style="${TABLE_STYLE}">
+          <thead style="${THEAD_STYLE}">
             <tr>
-              <th style="padding:9px 10px; text-align:center; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600; width:30px;">#</th>
-              <th style="padding:9px 10px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MARCA</th>
-              <th style="padding:9px 10px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MATRICULACIONES</th>
-              <th style="padding:9px 10px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">CUOTA PROV.</th>
-              <th style="padding:9px 10px; text-align:center; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">DIF. vs RANKING NAC.</th>
+              <th style="padding:10px 12px; text-align:center; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF; width:30px;">#</th>
+              <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MARCA</th>
+              <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MATRICULACIONES</th>
+              <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">CUOTA PROV.</th>
+              <th style="padding:10px 12px; text-align:center; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">DIF. vs RANKING NAC.</th>
             </tr>
           </thead>
           <tbody>${filas}</tbody>
@@ -1269,20 +1292,20 @@ function htmlSubseccionGruposEmpresariales(r: ResumenProvincia): string {
   }
   const filas = r.gruposProv.map((g, i) => `
     <tr style="background:${i % 2 === 0 ? "#ffffff" : PALETA.cardBg}; border-bottom:1px solid ${PALETA.borde};">
-      <td style="padding:8px 10px; color:${PALETA.text}; font-size:10px; width:30px; text-align:center;">${i + 1}</td>
-      <td style="padding:8px 10px; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${escapeHtml(g.grupo)}</td>
-      <td style="padding:8px 10px; text-align:right; color:${PALETA.textDark}; font-size:10px; font-weight:600;">${fmtInt(g.total)}</td>
-      <td style="padding:8px 10px; text-align:right; font-size:10px; font-weight:700; color:${PALETA.navy};">${fmtDec(g.cuota, 1)}%</td>
+      <td style="padding:9px 12px; color:${PALETA.text}; font-size:11px; width:30px; text-align:center; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${i + 1}</td>
+      <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; font-weight:600; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(g.grupo)}</td>
+      <td style="padding:9px 12px; text-align:right; color:${PALETA.textDark}; font-size:11px; font-weight:600; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtInt(g.total)}</td>
+      <td style="padding:9px 12px; text-align:right; font-size:11px; font-weight:700; color:${PALETA.navy}; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtDec(g.cuota, 1)}%</td>
     </tr>`).join("");
   return `
     <h3 style="margin:22px 0 10px 0; font-size:13px; font-weight:600; color:${PALETA.navy};">Análisis por grupo empresarial</h3>
-    <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
-      <thead style="background:${PALETA.navy};">
+    <table style="${TABLE_STYLE}">
+      <thead style="${THEAD_STYLE}">
         <tr>
-          <th style="padding:9px 10px; text-align:center; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600; width:30px;">#</th>
-          <th style="padding:9px 10px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">GRUPO</th>
-          <th style="padding:9px 10px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MATRICULACIONES</th>
-          <th style="padding:9px 10px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">CUOTA</th>
+          <th style="padding:10px 12px; text-align:center; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF; width:30px;">#</th>
+          <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">GRUPO</th>
+          <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MATRICULACIONES</th>
+          <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">CUOTA</th>
         </tr>
       </thead>
       <tbody>${filas}</tbody>
@@ -1296,24 +1319,24 @@ function htmlSubseccionGruposEmpresariales(r: ResumenProvincia): string {
 function htmlSeccion6(r: ResumenProvincia): string {
   const filaRatio = r.municipiosRatioDesc.slice(0, 20).map((m, i) => `
     <tr style="background:${i % 2 === 0 ? "#ffffff" : PALETA.cardBg}; border-bottom:1px solid ${PALETA.borde};">
-      <td style="padding:7px 12px; color:${PALETA.text}; width:30px; font-size:10px; text-align:center;">${i + 1}</td>
-      <td style="padding:7px 12px; color:${PALETA.textDark}; font-size:10px;">${escapeHtml(m.municipio)}</td>
-      <td style="padding:7px 12px; text-align:right; color:${PALETA.textDark}; font-size:10px;">${fmtInt(m.matriculaciones)}</td>
-      <td style="padding:7px 12px; text-align:right; font-weight:700; color:${PALETA.gold}; font-size:10px;">${fmtDec(m.ratio_x1000, 2)}</td>
+      <td style="padding:9px 12px; color:${PALETA.text}; width:30px; font-size:11px; text-align:center; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${i + 1}</td>
+      <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(m.municipio)}</td>
+      <td style="padding:9px 12px; text-align:right; color:${PALETA.textDark}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtInt(m.matriculaciones)}</td>
+      <td style="padding:9px 12px; text-align:right; font-weight:700; color:${PALETA.gold}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtDec(m.ratio_x1000, 2)}</td>
     </tr>`).join("");
 
   const topVol = r.municipiosVolumenDesc.slice(0, 5).map((m) => `
     <tr style="border-bottom:1px solid ${PALETA.borde};">
-      <td style="padding:7px 10px; color:${PALETA.textDark}; font-size:10px;">${escapeHtml(m.municipio)}</td>
-      <td style="padding:7px 10px; text-align:right; font-weight:700; color:${PALETA.navy}; font-size:10px;">${fmtInt(m.matriculaciones)}</td>
-      <td style="padding:7px 10px; text-align:right; color:${PALETA.text}; font-size:10px;">${fmtDec(m.ratio_x1000, 2)}</td>
+      <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(m.municipio)}</td>
+      <td style="padding:9px 12px; text-align:right; font-weight:700; color:${PALETA.navy}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtInt(m.matriculaciones)}</td>
+      <td style="padding:9px 12px; text-align:right; color:${PALETA.text}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtDec(m.ratio_x1000, 2)}</td>
     </tr>`).join("");
 
   const bottomRatio = r.municipiosRatioAscFiltrado.slice(0, 5).map((m) => `
     <tr style="border-bottom:1px solid ${PALETA.borde};">
-      <td style="padding:7px 10px; color:${PALETA.textDark}; font-size:10px;">${escapeHtml(m.municipio)}</td>
-      <td style="padding:7px 10px; text-align:right; color:${PALETA.text}; font-size:10px;">${fmtInt(m.matriculaciones)}</td>
-      <td style="padding:7px 10px; text-align:right; font-weight:700; color:${PALETA.peligro}; font-size:10px;">${fmtDec(m.ratio_x1000, 2)}</td>
+      <td style="padding:9px 12px; color:${PALETA.textDark}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${escapeHtml(m.municipio)}</td>
+      <td style="padding:9px 12px; text-align:right; color:${PALETA.text}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtInt(m.matriculaciones)}</td>
+      <td style="padding:9px 12px; text-align:right; font-weight:700; color:${PALETA.peligro}; font-size:11px; border-bottom:1px solid ${PALETA.borde}; vertical-align:middle;">${fmtDec(m.ratio_x1000, 2)}</td>
     </tr>`).join("");
 
   const nota = r.anioMapa !== String(r.anio)
@@ -1332,13 +1355,13 @@ function htmlSeccion6(r: ResumenProvincia): string {
           <p style="margin:0; font-size:11px; color:${PALETA.text};">Sin datos municipales disponibles para esta provincia.</p>
         </div>
       ` : `
-        <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden; margin-bottom:28px;">
-          <thead style="background:${PALETA.navy};">
+        <table style="${TABLE_STYLE} margin-bottom:28px;">
+          <thead style="${THEAD_STYLE}">
             <tr>
-              <th style="padding:9px 12px; text-align:center; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600; width:30px;">#</th>
-              <th style="padding:9px 12px; text-align:left; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MUNICIPIO</th>
-              <th style="padding:9px 12px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">MATRICULACIONES</th>
-              <th style="padding:9px 12px; text-align:right; color:#ffffff; font-size:9px; letter-spacing:1px; font-weight:600;">RATIO x1.000</th>
+              <th style="padding:10px 12px; text-align:center; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF; width:30px;">#</th>
+              <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MUNICIPIO</th>
+              <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">MATRICULACIONES</th>
+              <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">RATIO x1.000</th>
             </tr>
           </thead>
           <tbody>${filaRatio}</tbody>
@@ -1349,12 +1372,12 @@ function htmlSeccion6(r: ResumenProvincia): string {
         <div>
           <h4 style="margin:0 0 8px 0; font-size:12px; color:${PALETA.navy}; font-weight:600;">Núcleos de alta actividad</h4>
           <p style="margin:0 0 10px 0; font-size:9px; color:${PALETA.text};">Top 5 por volumen absoluto</p>
-          <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
-            <thead style="background:${PALETA.cardBg};">
+          <table style="${TABLE_STYLE}">
+            <thead style="background-color:#F7F7F5; color:${PALETA.navy};">
               <tr>
-                <th style="padding:7px 10px; text-align:left; color:${PALETA.navy}; font-size:9px; font-weight:600; letter-spacing:0.5px;">MUNICIPIO</th>
-                <th style="padding:7px 10px; text-align:right; color:${PALETA.navy}; font-size:9px; font-weight:600; letter-spacing:0.5px;">VOL.</th>
-                <th style="padding:7px 10px; text-align:right; color:${PALETA.navy}; font-size:9px; font-weight:600; letter-spacing:0.5px;">RATIO</th>
+                <th style="padding:9px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:${PALETA.navy};">MUNICIPIO</th>
+                <th style="padding:9px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:${PALETA.navy};">VOL.</th>
+                <th style="padding:9px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:${PALETA.navy};">RATIO</th>
               </tr>
             </thead>
             <tbody>${topVol || `<tr><td colspan="3" style="padding:10px; text-align:center; color:${PALETA.text}; font-size:10px;">—</td></tr>`}</tbody>
@@ -1363,12 +1386,12 @@ function htmlSeccion6(r: ResumenProvincia): string {
         <div>
           <h4 style="margin:0 0 8px 0; font-size:12px; color:${PALETA.peligro}; font-weight:600;">Zonas de baja penetración</h4>
           <p style="margin:0 0 10px 0; font-size:9px; color:${PALETA.text};">Top 5 menor ratio (min. 5 matriculaciones)</p>
-          <table style="width:100%; border-collapse:collapse; border:1px solid ${PALETA.borde}; border-radius:8px; overflow:hidden;">
-            <thead style="background:${PALETA.cardBg};">
+          <table style="${TABLE_STYLE}">
+            <thead style="background-color:#F7F7F5; color:${PALETA.navy};">
               <tr>
-                <th style="padding:7px 10px; text-align:left; color:${PALETA.navy}; font-size:9px; font-weight:600; letter-spacing:0.5px;">MUNICIPIO</th>
-                <th style="padding:7px 10px; text-align:right; color:${PALETA.navy}; font-size:9px; font-weight:600; letter-spacing:0.5px;">VOL.</th>
-                <th style="padding:7px 10px; text-align:right; color:${PALETA.navy}; font-size:9px; font-weight:600; letter-spacing:0.5px;">RATIO</th>
+                <th style="padding:9px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:${PALETA.navy};">MUNICIPIO</th>
+                <th style="padding:9px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:${PALETA.navy};">VOL.</th>
+                <th style="padding:9px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:${PALETA.navy};">RATIO</th>
               </tr>
             </thead>
             <tbody>${bottomRatio || `<tr><td colspan="3" style="padding:10px; text-align:center; color:${PALETA.text}; font-size:10px;">—</td></tr>`}</tbody>
@@ -1570,10 +1593,10 @@ function htmlSeccionEscenarios(
       const col = diff >= 0 ? PALETA.exito : PALETA.peligro;
       return `
         <tr>
-          <td style="padding:8px 10px; border-bottom:1px solid ${PALETA.borde}; font-size:10px; color:${PALETA.textDark};">${escapeHtml(formatMesAnio(r.fecha_mes))}</td>
-          <td style="padding:8px 10px; border-bottom:1px solid ${PALETA.borde}; font-size:10px; text-align:right; color:${PALETA.textDark}; font-variant-numeric:tabular-nums;">${fmtInt(base)}</td>
-          <td style="padding:8px 10px; border-bottom:1px solid ${PALETA.borde}; font-size:10px; text-align:right; font-weight:600; color:${PALETA.gold}; font-variant-numeric:tabular-nums;">${fmtInt(esc)}</td>
-          <td style="padding:8px 10px; border-bottom:1px solid ${PALETA.borde}; font-size:10px; text-align:right; font-weight:600; color:${col}; font-variant-numeric:tabular-nums;">${diff >= 0 ? "+" : ""}${fmtInt(diff)} (${diff >= 0 ? "+" : ""}${fmtDec(pct, 1)}%)</td>
+          <td style="padding:9px 12px; border-bottom:1px solid ${PALETA.borde}; font-size:11px; color:${PALETA.textDark}; vertical-align:middle;">${escapeHtml(formatMesAnio(r.fecha_mes))}</td>
+          <td style="padding:9px 12px; border-bottom:1px solid ${PALETA.borde}; font-size:11px; text-align:right; color:${PALETA.textDark}; font-variant-numeric:tabular-nums; vertical-align:middle;">${fmtInt(base)}</td>
+          <td style="padding:9px 12px; border-bottom:1px solid ${PALETA.borde}; font-size:11px; text-align:right; font-weight:600; color:${PALETA.gold}; font-variant-numeric:tabular-nums; vertical-align:middle;">${fmtInt(esc)}</td>
+          <td style="padding:9px 12px; border-bottom:1px solid ${PALETA.borde}; font-size:11px; text-align:right; font-weight:600; color:${col}; font-variant-numeric:tabular-nums; vertical-align:middle;">${diff >= 0 ? "+" : ""}${fmtInt(diff)} (${diff >= 0 ? "+" : ""}${fmtDec(pct, 1)}%)</td>
         </tr>`;
     })
     .join("");
@@ -1599,13 +1622,13 @@ function htmlSeccionEscenarios(
       </div>
 
       <p style="margin:0 0 8px 0; font-size:11px; font-weight:600; color:${PALETA.navy};">Próximos 6 meses — predicción base vs. escenario</p>
-      <table style="width:100%; border-collapse:collapse; margin-bottom:18px;">
+      <table style="${TABLE_STYLE} margin-bottom:18px;">
         <thead>
           <tr style="background:${PALETA.cardBg};">
-            <th style="padding:8px 10px; text-align:left; font-size:10px; color:${PALETA.text}; border-bottom:2px solid ${PALETA.borde}; font-weight:600;">Mes</th>
-            <th style="padding:8px 10px; text-align:right; font-size:10px; color:${PALETA.text}; border-bottom:2px solid ${PALETA.borde}; font-weight:600;">Base (Prophet)</th>
-            <th style="padding:8px 10px; text-align:right; font-size:10px; color:${PALETA.text}; border-bottom:2px solid ${PALETA.borde}; font-weight:600;">Escenario</th>
-            <th style="padding:8px 10px; text-align:right; font-size:10px; color:${PALETA.text}; border-bottom:2px solid ${PALETA.borde}; font-weight:600;">Diferencia</th>
+            <th style="padding:10px 12px; text-align:left; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">Mes</th>
+            <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">Base (Prophet)</th>
+            <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">Escenario</th>
+            <th style="padding:10px 12px; text-align:right; font-size:10px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; border:none; color:#FFFFFF;">Diferencia</th>
           </tr>
         </thead>
         <tbody>
@@ -1799,13 +1822,22 @@ export async function generarInformeTerritorial(
     const g1 = gruposProv[0];
     const g2 = gruposProv[1];
     const top3 = gruposProv.slice(0, 3).reduce((s, g) => s + g.cuota, 0);
-    const concentrado = top3 >= 60;
+    // Tres categorías: concentrado >=60, moderadamente concentrado 45-60, competitivo <45.
+    const tipoMercado =
+      top3 >= 60 ? "concentrado"
+      : top3 >= 45 ? "moderadamente concentrado"
+      : "competitivo";
+    const colorMercado =
+      top3 >= 60 ? PALETA.peligro
+      : top3 >= 45 ? PALETA.aviso
+      : PALETA.exito;
     interpretacionGruposProv =
-      `El mercado provincial está dominado por <strong style="color:${PALETA.navy};">${escapeHtml(g1.grupo)}</strong> ` +
+      `El mercado de <strong>${escapeHtml(provincia)}</strong> está liderado por ` +
+      `<strong style="color:${PALETA.navy};">${escapeHtml(g1.grupo)}</strong> ` +
       `con una cuota del <strong>${fmtDec(g1.cuota, 1)}%</strong>` +
       (g2 ? `, seguido de <strong>${escapeHtml(g2.grupo)}</strong> con <strong>${fmtDec(g2.cuota, 1)}%</strong>` : "") +
       `. Los tres primeros grupos concentran el <strong>${fmtDec(top3, 1)}%</strong> del mercado provincial, ` +
-      `lo que indica un mercado <strong style="color:${concentrado ? PALETA.peligro : PALETA.exito};">${concentrado ? "concentrado" : "competitivo"}</strong>.`;
+      `configurando un mercado <strong style="color:${colorMercado};">${tipoMercado}</strong>.`;
   }
 
   const liderProv = top10MarcasProv[0];
