@@ -56,29 +56,36 @@ export default function GruposEmpresarialesSection({ brandData, dateRange }: Pro
     return { lista: arr, granTotal };
   }, [filtrado]);
 
-  // ── Agregación 2: evolución mensual top 5 grupos ───────────────────────
+  // ── Agregación 2: evolución mensual top 5 grupos + línea "Resto" ───────
+  // La línea "Resto" agrega los grupos en posición 6+, de modo que la suma
+  // de las series cuadra con el total mensual del mercado.
   const evolucion = useMemo(() => {
     const top5 = cuotas.lista.slice(0, 5).map((c) => c.grupo);
     if (top5.length === 0) return { series: [], grupos: [] };
+    const top5Set = new Set(top5);
+    const hayResto = cuotas.lista.length > 5;
+    const RESTO_LABEL = "Resto";
     const byDate = new Map<string, Record<string, number>>();
     for (const r of filtrado) {
       const g = getGrupo(r.marca);
-      if (!top5.includes(g)) continue;
+      const key = top5Set.has(g) ? g : (hayResto ? RESTO_LABEL : null);
+      if (key === null) continue;
       let entry = byDate.get(r.fecha_mes);
       if (!entry) {
         entry = {};
         byDate.set(r.fecha_mes, entry);
       }
-      entry[g] = (entry[g] ?? 0) + r.matriculaciones;
+      entry[key] = (entry[key] ?? 0) + r.matriculaciones;
     }
+    const grupos = hayResto ? [...top5, RESTO_LABEL] : top5;
     const series = [...byDate.entries()]
       .map(([fecha_mes, vals]) => {
         const row: Record<string, number | string> = { fecha_mes };
-        for (const g of top5) row[g] = vals[g] ?? 0;
+        for (const g of grupos) row[g] = vals[g] ?? 0;
         return row as { fecha_mes: string } & Record<string, number>;
       })
       .sort((a, b) => a.fecha_mes.localeCompare(b.fecha_mes));
-    return { series, grupos: top5 };
+    return { series, grupos };
   }, [filtrado, cuotas]);
 
   // ── Agregación 3: variación interanual ─────────────────────────────────
@@ -270,9 +277,10 @@ export default function GruposEmpresarialesSection({ brandData, dateRange }: Pro
 
       {/* ── Gráfico 2: evolución top 5 ── */}
       <div>
-        <h3 className="text-base font-semibold mb-1">Evolución mensual — Top 5 grupos</h3>
+        <h3 className="text-base font-semibold mb-1">Evolución mensual — Top 5 grupos + Resto</h3>
         <p className="text-slate-500 text-sm mb-4">
-          Series temporales mensuales de los cinco grupos con mayor volumen acumulado en el período filtrado.
+          Series temporales mensuales de los cinco grupos con mayor volumen acumulado en el período filtrado;
+          la línea gris <strong>Resto</strong> agrega los grupos restantes para que la suma cuadre con el total mensual del mercado.
         </p>
         <div className="h-[420px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -299,7 +307,8 @@ export default function GruposEmpresarialesSection({ brandData, dateRange }: Pro
                   dataKey={g}
                   name={g}
                   stroke={colorParaGrupo(g, i)}
-                  strokeWidth={2.2}
+                  strokeWidth={g === "Resto" ? 1.6 : 2.2}
+                  strokeDasharray={g === "Resto" ? "6 4" : undefined}
                   dot={false}
                   isAnimationActive={false}
                 />

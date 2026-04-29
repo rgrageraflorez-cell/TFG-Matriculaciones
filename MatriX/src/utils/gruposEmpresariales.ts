@@ -84,8 +84,12 @@ export const COLORES_GRUPOS: string[] = [
 
 export const COLOR_OTROS = "#6B7280";
 
+/** Color para la línea agregada "Resto" en gráficas con top-N. */
+export const COLOR_RESTO = "#9CA3AF";
+
 /** Devuelve el color asignado al grupo según su posición en el ranking. */
 export const colorParaGrupo = (grupo: string, ranking: number): string => {
   if (grupo === "Otros") return COLOR_OTROS;
+  if (grupo === "Resto") return COLOR_RESTO;
   return COLORES_GRUPOS[Math.min(ranking, COLORES_GRUPOS.length - 1)];
 };
