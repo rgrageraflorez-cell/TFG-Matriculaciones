@@ -279,7 +279,7 @@ async function capturarYAnadirAlPdf(
     imageTimeout: 0,
     removeContainer: true,
   });
-  const imgData = canvas.toDataURL("image/png", 1.0);
+  const imgData = canvas.toDataURL("image/jpeg", 0.96);
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const margenSup = dibujarHeader ? 14 : 0;
@@ -291,7 +291,7 @@ async function capturarYAnadirAlPdf(
 
   if (imgH <= areaH) {
     if (dibujarHeader) dibujarCabecera(pdf, cabecera);
-    pdf.addImage(imgData, "PNG", 0, margenSup, imgW, imgH, undefined, "FAST");
+    pdf.addImage(imgData, "JPEG", 0, margenSup, imgW, imgH, undefined, "FAST");
     if (dibujarHeader) dibujarPie(pdf, numeroPaginaInicial);
     return numeroPaginaInicial + 1;
   }
@@ -312,9 +312,9 @@ async function capturarYAnadirAlPdf(
     if (ctx) {
       ctx.drawImage(canvas, 0, offsetPx, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
     }
-    const sliceData = off.toDataURL("image/png", 1.0);
+    const sliceData = off.toDataURL("image/jpeg", 0.96);
     if (dibujarHeader) dibujarCabecera(pdf, cabecera);
-    pdf.addImage(sliceData, "PNG", 0, margenSup, imgW, sliceH / scaleFactor, undefined, "FAST");
+    pdf.addImage(sliceData, "JPEG", 0, margenSup, imgW, sliceH / scaleFactor, undefined, "FAST");
     if (dibujarHeader) dibujarPie(pdf, paginaActual);
     offsetPx += sliceH;
     paginaActual++;
@@ -965,7 +965,7 @@ function htmlSeccion1(r: ResumenProvincia): string {
   });
 
   const svg = `
-    <svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:${PALETA.cardBg}; border:1px solid ${PALETA.borde}; border-radius:10px;">
+    <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="background:${PALETA.cardBg}; border:1px solid ${PALETA.borde}; border-radius:10px;">
       ${yTicks.map((t) => `
         <line x1="${padL}" y1="${t.y}" x2="${W - padR}" y2="${t.y}" stroke="${PALETA.borde}" stroke-width="0.5"/>
         <text x="${padL - 8}" y="${t.y + 3}" fill="${PALETA.text}" font-size="9" text-anchor="end">${fmtInt(Math.round(t.v))}</text>
@@ -1025,7 +1025,7 @@ function htmlSeccion2(r: ResumenProvincia): string {
   const stepLabel = xLabels.length > 14 ? 2 : 1;
 
   const svg = `
-    <svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:${PALETA.cardBg}; border:1px solid ${PALETA.borde}; border-radius:10px;">
+    <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="background:${PALETA.cardBg}; border:1px solid ${PALETA.borde}; border-radius:10px;">
       ${yTicks.map((t) => `
         <line x1="${padL}" y1="${t.y}" x2="${W - padR}" y2="${t.y}" stroke="${PALETA.borde}" stroke-width="0.5"/>
         <text x="${padL - 8}" y="${t.y + 3}" fill="${PALETA.text}" font-size="9" text-anchor="end">${fmtInt(Math.round(t.v))}</text>
@@ -1187,7 +1187,7 @@ function htmlSeccion4(r: ResumenProvincia): string {
   const xLabels = prov.map((s, i) => ({ x: xOf(i), texto: MESES_ES[parseInt(s.fecha.slice(5, 7))]?.slice(0, 3) ?? "" }));
 
   const svg = `
-    <svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:${PALETA.cardBg}; border:1px solid ${PALETA.borde}; border-radius:10px;">
+    <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" style="background:${PALETA.cardBg}; border:1px solid ${PALETA.borde}; border-radius:10px;">
       ${yTicks.map((t) => `
         <line x1="${padL}" y1="${t.y}" x2="${W - padR}" y2="${t.y}" stroke="${PALETA.borde}" stroke-width="0.5"/>
         <text x="${padL - 8}" y="${t.y + 3}" fill="${PALETA.text}" font-size="9" text-anchor="end">${fmtInt(Math.round(t.v))}</text>
