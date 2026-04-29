@@ -260,6 +260,56 @@ function crearContenedor(html: string): HTMLDivElement {
   return wrapper;
 }
 
+// Convierte cada <svg> dentro del nodo en un <img> con un PNG rasterizado.
+// Es necesario porque html2canvas-pro a veces falla al rasterizar SVG inline
+// (especialmente con scale > 2). Rasterizando vía Image + canvas el navegador
+// usa su propio motor SVG, que es fiable.
+async function rasterizarSvgs(nodo: HTMLElement): Promise<void> {
+  const svgs = Array.from(nodo.querySelectorAll("svg"));
+  for (const svg of svgs) {
+    const widthAttr = parseFloat(svg.getAttribute("width") || "0");
+    const heightAttr = parseFloat(svg.getAttribute("height") || "0");
+    const vb = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
+    const w = widthAttr || (vb ? vb.width : 0);
+    const h = heightAttr || (vb ? vb.height : 0);
+    if (w <= 0 || h <= 0) continue;
+
+    // Asegura que el namespace XML esté en el svg serializado.
+    if (!svg.getAttribute("xmlns")) svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const xml = new XMLSerializer().serializeToString(svg);
+    const svg64 = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error("rasterizarSvgs: no se pudo cargar el SVG"));
+        im.src = svg64;
+      });
+      const SVG_SCALE = 3;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(w * SVG_SCALE);
+      canvas.height = Math.round(h * SVG_SCALE);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/png");
+
+      const replacement = document.createElement("img");
+      replacement.src = dataUrl;
+      replacement.width = w;
+      replacement.height = h;
+      const oldStyle = svg.getAttribute("style") || "";
+      replacement.style.cssText = `${oldStyle}; display:block; max-width:100%;`;
+      svg.parentElement?.replaceChild(replacement, svg);
+    } catch (err) {
+      console.warn("[rasterizarSvgs] omito un SVG por error:", err);
+    }
+  }
+}
+
 async function capturarYAnadirAlPdf(
   pdf: jsPDF,
   nodo: HTMLElement,
@@ -2085,6 +2135,9 @@ export async function generarInformeTerritorial(
     progreso(`Renderizando ${secciones[i].etiqueta}...`);
     const wrapper = crearContenedor(secciones[i].html);
     try {
+      // Rasteriza los SVG inline a <img> antes de la captura: html2canvas-pro
+      // tiene fallos intermitentes con SVG inline (especialmente con scale>2).
+      await rasterizarSvgs(wrapper);
       paginaActual = await capturarYAnadirAlPdf(
         pdf, wrapper, i === 0, { provincia, anio: anioObj }, paginaActual, secciones[i].header
       );
