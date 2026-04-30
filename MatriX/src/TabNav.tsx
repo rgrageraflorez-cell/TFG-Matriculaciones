@@ -6,6 +6,8 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "predictiva", label: "Predictiva" },
   { id: "cognitiva", label: "Cognitiva" },
   { id: "suscripcion", label: "Suscripción" },
+  { id: "ficha-tecnica", label: "Ficha técnica" },
+  { id: "modelo-negocio", label: "Modelo de negocio" },
 ];
 
 type Props = {
@@ -15,7 +17,7 @@ type Props = {
 
 export default function TabNav({ active, onChange }: Props) {
   return (
-    <nav className="flex" role="tablist">
+    <nav className="flex flex-wrap" role="tablist">
       {TABS.map((tab) => {
         const isActive = active === tab.id;
         return (

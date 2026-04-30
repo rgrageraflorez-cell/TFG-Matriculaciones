@@ -48,7 +48,13 @@ export type DailyPredRow = {
   alpha_opt: number;
 };
 
-export type TabId = "descriptiva" | "predictiva" | "cognitiva" | "suscripcion";
+export type TabId =
+  | "descriptiva"
+  | "predictiva"
+  | "cognitiva"
+  | "suscripcion"
+  | "ficha-tecnica"
+  | "modelo-negocio";
 
 export type Subscriber = {
   nombre: string;

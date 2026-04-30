@@ -199,6 +199,26 @@
 /* Acento dorado solo para datos destacados */
 .exec-accent-gold { color: #C4922A !important; }
 
+/* Píldora horizontal: dato compacto, fondo crema, borde sutil */
+.exec-pill {
+  display: inline-flex; align-items: center;
+  background: #FAFAF8; color: #1A2B4A;
+  border: 1px solid #E5E7EB; border-left: 2px solid #C4922A;
+  font-size: 12px; font-weight: 500; letter-spacing: 0.01em;
+  padding: 6px 12px; border-radius: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Callout de aviso/limitaciones: fondo claro, acento gold a la izquierda */
+.exec-callout-warn {
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-left: 3px solid #C4922A;
+  border-radius: 4px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
 /* Tooltip personalizado de recharts */
 .recharts-tooltip-wrapper .recharts-default-tooltip {
   border: 1px solid #E5E7EB !important;

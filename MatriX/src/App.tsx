@@ -5,6 +5,9 @@ import DescriptivaTab from "./DescriptivaTab";
 import PredictivaTab from "./PredictivaTab";
 import CognitivaTab from "./CognitivaTab";
 import SuscripcionTab from "./SuscripcionTab";
+import FichaTecnicaTab from "./FichaTecnicaTab";
+import ModeloNegocioTab from "./ModeloNegocioTab";
+import HomeIntro from "./components/HomeIntro";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("descriptiva");
@@ -42,7 +45,12 @@ export default function App() {
       {/* ── Contenido ── */}
       <main className="max-w-7xl mx-auto px-8" style={{ paddingTop: 32, paddingBottom: 48 }}>
         <div style={{ display: activeTab === "descriptiva" ? "block" : "none" }}>
-          {visited.current.has("descriptiva") && <DescriptivaTab />}
+          {visited.current.has("descriptiva") && (
+            <>
+              <HomeIntro onNavigate={handleTabChange} />
+              <DescriptivaTab />
+            </>
+          )}
         </div>
         <div style={{ display: activeTab === "predictiva" ? "block" : "none" }}>
           {visited.current.has("predictiva") && <PredictivaTab />}
@@ -52,6 +60,12 @@ export default function App() {
         </div>
         <div style={{ display: activeTab === "suscripcion" ? "block" : "none" }}>
           {visited.current.has("suscripcion") && <SuscripcionTab />}
+        </div>
+        <div style={{ display: activeTab === "ficha-tecnica" ? "block" : "none" }}>
+          {visited.current.has("ficha-tecnica") && <FichaTecnicaTab />}
+        </div>
+        <div style={{ display: activeTab === "modelo-negocio" ? "block" : "none" }}>
+          {visited.current.has("modelo-negocio") && <ModeloNegocioTab />}
         </div>
       </main>
     </div>
