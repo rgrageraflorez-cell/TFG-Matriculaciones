@@ -44,11 +44,12 @@ except ImportError:
 
 # ── Rutas por defecto ──────────────────────────────────────────────────────
 HERE = Path(__file__).resolve().parent
+PUBLIC_DIR = HERE.parent / "public"
 DEFAULT_SUBS = HERE / "subscribers.json"
-DEFAULT_CSV_PRED = HERE / "df_real_pred_mensual_total.csv"
-DEFAULT_CSV_AGRUPADO = HERE / "df_mensual_agrupado.csv"
-DEFAULT_CSV_MAPA = HERE / "df_mapa_densidad.csv"
-DEFAULT_CSV_MARCA_LUGAR = HERE / "df_mensual_marca_lugar.csv"
+DEFAULT_CSV_PRED = PUBLIC_DIR / "df_real_pred_mensual_total.csv"
+DEFAULT_CSV_AGRUPADO = PUBLIC_DIR / "df_mensual_agrupado.csv"
+DEFAULT_CSV_MAPA = PUBLIC_DIR / "df_mapa_densidad.csv"
+DEFAULT_CSV_MARCA_LUGAR = PUBLIC_DIR / "df_mensual_marca_lugar.csv"
 DEFAULT_GEOJSON = HERE / "provincias.geojson"
 DEFAULT_LOG = HERE / "monthly_report_log.txt"
 DEFAULT_SENDER = "informes@matriculaciones.es"
@@ -124,7 +125,51 @@ def fmt_mes_anio(year: int, month: int) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 # CARGA DE DATOS
 # ═══════════════════════════════════════════════════════════════════════════
+def _kv_env() -> tuple[str, str] | None:
+    url = os.environ.get("KV_REST_API_URL", "").strip().rstrip("/")
+    token = os.environ.get("KV_REST_API_TOKEN", "").strip()
+    if url and token:
+        return url, token
+    return None
+
+
+def cargar_suscriptores_kv(url: str, token: str, key: str = "subscribers") -> list[dict[str, Any]]:
+    """Lee la lista de suscriptores desde Vercel KV (Upstash Redis REST)."""
+    import urllib.request
+    req = urllib.request.Request(
+        f"{url}/get/{key}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Vercel KV /get/{key} fallo: {exc}") from exc
+    raw = payload.get("result")
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, list) else []
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
 def cargar_suscriptores(path: Path) -> list[dict[str, Any]]:
+    """Carga suscriptores desde Vercel KV si esta configurado, si no desde JSON local."""
+    kv = _kv_env()
+    if kv is not None:
+        url, token = kv
+        try:
+            subs = cargar_suscriptores_kv(url, token)
+            print(f"[KV] {len(subs)} suscriptores cargados desde Vercel KV")
+            return subs
+        except RuntimeError as exc:
+            print(f"[KV] WARN: {exc}; intentando JSON local como fallback", file=sys.stderr)
     if not path.exists():
         return []
     try:

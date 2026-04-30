@@ -57,10 +57,13 @@ except ImportError:  # dotenv es opcional; el engine funciona igual con env nati
     pass
 
 
-# ── Rutas por defecto: todo relativo a este fichero ──
+# ── Rutas por defecto ──
+# scripts/ es hermano de public/. Los CSV viven en public/ (servidos por la
+# web); los logs y el subscribers.json local viven aqui en scripts/.
 HERE = Path(__file__).resolve().parent
+PUBLIC_DIR = HERE.parent / "public"
 DEFAULT_SUBS = HERE / "subscribers.json"
-DEFAULT_CSV = HERE / "df_real_pred_mensual_total.csv"
+DEFAULT_CSV = PUBLIC_DIR / "df_real_pred_mensual_total.csv"
 DEFAULT_LOG = HERE / "alert_log.txt"
 DEFAULT_SENDER = "alertas@matriculaciones.es"
 
@@ -119,7 +122,55 @@ class AnalisisForecast:
 # ────────────────────────────────────────────────────────────────────────────
 # Carga de datos
 # ────────────────────────────────────────────────────────────────────────────
+def _kv_env() -> tuple[str, str] | None:
+    """Devuelve (url, token) si las env vars de Vercel KV estan presentes."""
+    url = os.environ.get("KV_REST_API_URL", "").strip().rstrip("/")
+    token = os.environ.get("KV_REST_API_TOKEN", "").strip()
+    if url and token:
+        return url, token
+    return None
+
+
+def cargar_suscriptores_kv(url: str, token: str, key: str = "subscribers") -> list[dict[str, Any]]:
+    """Lee la lista de suscriptores desde Vercel KV (Upstash Redis REST).
+
+    Convencion: clave unica `subscribers` que almacena un JSON (lista de dicts).
+    """
+    import urllib.request
+    req = urllib.request.Request(
+        f"{url}/get/{key}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Vercel KV /get/{key} fallo: {exc}") from exc
+    raw = payload.get("result")
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, list) else []
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
 def cargar_suscriptores(path: Path) -> list[dict[str, Any]]:
+    """Carga suscriptores desde Vercel KV si esta configurado, si no desde JSON local."""
+    kv = _kv_env()
+    if kv is not None:
+        url, token = kv
+        try:
+            subs = cargar_suscriptores_kv(url, token)
+            print(f"[KV] {len(subs)} suscriptores cargados desde Vercel KV")
+            return subs
+        except RuntimeError as exc:
+            print(f"[KV] WARN: {exc}; intentando JSON local como fallback", file=sys.stderr)
     if not path.exists():
         return []
     try:
