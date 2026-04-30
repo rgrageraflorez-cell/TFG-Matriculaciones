@@ -261,53 +261,92 @@ function crearContenedor(html: string): HTMLDivElement {
 }
 
 // Convierte cada <svg> dentro del nodo en un <img> con un PNG rasterizado.
-// Es necesario porque html2canvas-pro a veces falla al rasterizar SVG inline
-// (especialmente con scale > 2). Rasterizando vía Image + canvas el navegador
-// usa su propio motor SVG, que es fiable.
+// Necesario porque html2canvas-pro falla intermitentemente al rasterizar
+// SVG inline (especialmente con scale > 2). Rasterizamos via Blob URL +
+// Image + canvas para que el navegador use su motor SVG nativo, que es
+// fiable, y dejamos un <img> con dataURL PNG para que html2canvas solo
+// componga bitmaps.
 async function rasterizarSvgs(nodo: HTMLElement): Promise<void> {
   const svgs = Array.from(nodo.querySelectorAll("svg"));
-  for (const svg of svgs) {
+  console.log(`[rasterizarSvgs] encontrados ${svgs.length} SVG(s)`);
+  let okCount = 0, failCount = 0;
+  for (let idx = 0; idx < svgs.length; idx++) {
+    const svg = svgs[idx];
     const widthAttr = parseFloat(svg.getAttribute("width") || "0");
     const heightAttr = parseFloat(svg.getAttribute("height") || "0");
     const vb = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal : null;
     const w = widthAttr || (vb ? vb.width : 0);
     const h = heightAttr || (vb ? vb.height : 0);
-    if (w <= 0 || h <= 0) continue;
+    if (w <= 0 || h <= 0) {
+      console.warn(`[rasterizarSvgs] SVG #${idx} sin dimensiones validas (w=${w}, h=${h}); se mantiene`);
+      continue;
+    }
 
-    // Asegura que el namespace XML esté en el svg serializado.
-    if (!svg.getAttribute("xmlns")) svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    const xml = new XMLSerializer().serializeToString(svg);
-    const svg64 = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+    // Clonamos para no mutar el nodo original (se va a sustituir igualmente,
+    // pero por higiene). Limpiamos style outer (border-radius en SVG no se
+    // pinta por algunos motores Image() y produce errores silenciosos).
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+    clone.setAttribute("width", String(w));
+    clone.setAttribute("height", String(h));
+    clone.removeAttribute("style"); // limpiamos CSS outer (background, border-radius)
+
+    const xml = new XMLSerializer().serializeToString(clone);
+    // Blob + objectURL es mas fiable que data:image/svg+xml para SVG grandes
+    // o con caracteres especiales (encodeURIComponent puede romper el parser).
+    const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
 
     try {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const im = new Image();
+        im.decoding = "sync";
         im.onload = () => resolve(im);
-        im.onerror = () => reject(new Error("rasterizarSvgs: no se pudo cargar el SVG"));
-        im.src = svg64;
+        im.onerror = (e) => reject(new Error(`Image.onerror: ${String(e)}`));
+        im.src = url;
       });
+
+      // Espera a que el decode termine antes de drawImage (Safari).
+      if (typeof img.decode === "function") {
+        try { await img.decode(); } catch { /* tolerable */ }
+      }
+
       const SVG_SCALE = 3;
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(w * SVG_SCALE);
       canvas.height = Math.round(h * SVG_SCALE);
       const ctx = canvas.getContext("2d");
-      if (!ctx) continue;
+      if (!ctx) throw new Error("getContext('2d') devolvió null");
       ctx.fillStyle = "#FFFFFF";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/png");
 
-      const replacement = document.createElement("img");
-      replacement.src = dataUrl;
-      replacement.width = w;
-      replacement.height = h;
-      const oldStyle = svg.getAttribute("style") || "";
-      replacement.style.cssText = `${oldStyle}; display:block; max-width:100%;`;
-      svg.parentElement?.replaceChild(replacement, svg);
+      // Reemplazamos el <svg> por el propio <canvas> ya pintado. Asi html2canvas
+      // no tiene que esperar a la carga asincrona de un <img>, evitando el
+      // problema de capturas en blanco cuando el bitmap aun no se ha decodificado.
+      canvas.style.cssText =
+        `display:block; width:${w}px; height:${h}px; ` +
+        `background:#FFFFFF; border:1px solid #E5E7EB; border-radius:6px;`;
+      svg.parentElement?.replaceChild(canvas, svg);
+      okCount++;
     } catch (err) {
-      console.warn("[rasterizarSvgs] omito un SVG por error:", err);
+      failCount++;
+      console.warn(`[rasterizarSvgs] SVG #${idx} fallo:`, err);
+      // Fallback: insertamos un placeholder visible para que al menos no
+      // quede un hueco fantasma.
+      const ph = document.createElement("div");
+      ph.style.cssText =
+        `display:flex; align-items:center; justify-content:center; ` +
+        `width:${w}px; height:${h}px; background:#F7F7F5; ` +
+        `border:1px dashed #E5E7EB; color:#6B7280; font-size:11px;`;
+      ph.textContent = "Gráfico no disponible";
+      svg.parentElement?.replaceChild(ph, svg);
+    } finally {
+      URL.revokeObjectURL(url);
     }
   }
+  console.log(`[rasterizarSvgs] resumen: ${okCount} OK / ${failCount} fallos`);
 }
 
 async function capturarYAnadirAlPdf(
