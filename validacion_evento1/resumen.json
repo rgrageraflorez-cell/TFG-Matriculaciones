@@ -1,0 +1,44 @@
+{
+  "episodios_identificados": [
+    {
+      "ano_pico_previo": 1992,
+      "valor_pico": 1008454,
+      "ano_suelo": 1993,
+      "valor_suelo": 775461,
+      "caida_acum_pct": -23.104,
+      "ano_rebote": 1994,
+      "valor_rebote": 938971,
+      "tasa_rebote_pct": 21.0855
+    },
+    {
+      "ano_pico_previo": 2010,
+      "valor_pico": 1000010,
+      "ano_suelo": 2012,
+      "valor_suelo": 710638,
+      "caida_acum_pct": -28.9369,
+      "ano_rebote": 2013,
+      "valor_rebote": 742305,
+      "tasa_rebote_pct": 4.4561
+    },
+    {
+      "ano_pico_previo": 2018,
+      "valor_pico": 1424758,
+      "ano_suelo": 2020,
+      "valor_suelo": 939096,
+      "caida_acum_pct": -34.0873,
+      "ano_rebote": 2021,
+      "valor_rebote": 953624,
+      "tasa_rebote_pct": 1.547
+    }
+  ],
+  "magnitudes_individuales": [21.09, 4.46, 1.55],
+  "media": 9.03,
+  "desviacion_tipica": 10.54,
+  "magnitud_actual_simulador": 15,
+  "magnitud_nueva_propuesta": 9.03,
+  "alpha_atenuacion": 0.5,
+  "vector_alpha_1": [-24.49, -2.63, 15.38, 12.59, 31.93, 35.98, 20.64, -15.23, 3.63, 3.53, 10.45, 16.6],
+  "vector_alpha_05_default": [-7.73, 3.2, 12.2, 10.81, 20.48, 22.5, 14.83, -3.1, 6.33, 6.28, 9.74, 12.82],
+  "vector_alpha_0": [9.03, 9.03, 9.03, 9.03, 9.03, 9.03, 9.03, 9.03, 9.03, 9.03, 9.03, 9.03],
+  "aplicar_al_json": true
+}

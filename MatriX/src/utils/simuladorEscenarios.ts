@@ -109,9 +109,9 @@ export const CATALOGO_EVENTOS_DEFAULT: EventoCatalogo[] = [
   {
     id: "boom",
     nombre: "Boom post-crisis",
-    descripcion: "Calibrado sobre la recuperación 2021-2022 de la serie histórica.",
-    impactoMensualPct: v12(15),
-    impactoLabel: "+15% medio anual",
+    descripcion: "Magnitud media de los rebotes tras crisis identificadas en 1990-2024 (1993, 2012, 2020); forma 2021-2022 atenuada al 50%.",
+    impactoMensualPct: v12(9),
+    impactoLabel: "+9% medio anual",
     duracionMeses: null,
     duracionLabel: "Todo el forecast",
     signo: "positivo",

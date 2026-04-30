@@ -1,15 +1,18 @@
 {
   "metadata": {
-    "generado": "2026-04-26 15:34:51 CEST",
-    "metodologia": "Calibracion empirica sobre serie DGT 2021-2024 y serie anual 1990-2024. Eventos no calibrables basados en literatura especializada.",
-    "fuentes": ["Cantos-Sanchez et al. 2015", "BCE tipos 2022-2023", "DGT serie mensual 2021-2024"]
+    "generado": "2026-04-30 09:33:43 CEST",
+    "metodologia": "Calibracion empirica sobre serie DGT mensual 2021-2025 y serie anual 1990-2024. Boom: magnitud media de booms post-crisis identificados, forma 2021-2022 atenuada con alpha. Eventos no calibrables basados en literatura especializada.",
+    "fuentes": ["Cantos-Sanchez et al. 2015", "BCE tipos 2022-2023", "DGT serie mensual 2021-2025", "DGT series historicas anuales 1990-2024"]
   },
   "eventos": {
     "boom_postcrisis": {
-      "impacto_mensual": [643.1, 201.8, -173.3, -94.8, -469.3, -535.4, -215.6, 519.6, 157.3, 170.1, 46.7, -70.2],
-      "impacto_medio_anual": 15,
+      "impacto_mensual": [-7.73, 3.2, 12.2, 10.81, 20.48, 22.5, 14.83, -3.1, 6.33, 6.28, 9.74, 12.82],
+      "impacto_medio_anual": 9.03,
       "tipo": "empirico",
-      "periodo_referencia": "2021-2022"
+      "periodo_referencia": "Forma 2021-2022 atenuada (alpha=0.50); magnitud media de 3 booms post-crisis 1990-2024",
+      "n_episodios": 3,
+      "desviacion_tipica": 10.54,
+      "alpha_atenuacion": 0.5
     },
     "campana_promocional": {
       "impacto_mensual": [0, 0, 14.2, 0, 19, 14.3, 12.5, 0, 0, 0, 0, 0],
