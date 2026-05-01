@@ -13,9 +13,12 @@ import {
   Bar,
   Cell,
 } from "recharts";
-import type { PredictionRow, DailyPredRow } from "./types";
+import type { PredictionRow, DailyPredRow, TabId } from "./types";
 import { parseNumber, formatInt, formatDec, formatMonth, fetchCsv, seriesTooltip } from "./utils.tsx";
 import SimuladorEscenariosSection from "./SimuladorEscenariosSection";
+import SaludModeloBadge from "./utils/SaludModeloBadge";
+import { getSaludModeloMock } from "./utils/protocoloSilencio.mock";
+import { navigateToSection } from "./utils/scrollToSection";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -24,7 +27,19 @@ const DOW_LABELS: Record<string, string> = {
   viernes: "V", sabado: "S", domingo: "D",
 };
 
-export default function PredictivaTab() {
+type Props = {
+  /** Permite a los enlaces inline del Patron 3 saltar a la pestana de
+   *  ficha tecnica + scroll al anchor de capacidades-limites. Opcional
+   *  para no romper otros usages del componente. */
+  onNavigate?: (tab: TabId) => void;
+};
+
+export default function PredictivaTab({ onNavigate }: Props = {}) {
+  // Salud del modelo (Patron 1). Mock por ahora: no hay historial de
+  // predicciones persistido mes a mes (ver TODO_PERSISTENCIA_PREDICCIONES.md).
+  const salud = useMemo(() => getSaludModeloMock(), []);
+  const isSilenced = salud.status === "silenced";
+  const isDegraded = salud.status === "degraded";
   const [predData, setPredData] = useState<PredictionRow[]>([]);
   const [dailyData, setDailyData] = useState<DailyPredRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,40 +220,140 @@ export default function PredictivaTab() {
 
       {/* Main prediction chart */}
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <h3 className="text-xl font-semibold mb-1">{hasProphet ? "Real vs Prophet vs TBATS" : "TBATS: Real vs Prediccion"}</h3>
-        <p className="text-slate-500 text-sm mb-5">
+        <div
+          className="flex items-start justify-between flex-wrap mb-1"
+          style={{ gap: 12 }}
+        >
+          <h3 className="text-xl font-semibold">
+            {hasProphet ? "Real vs Prophet vs TBATS" : "TBATS: Real vs Prediccion"}
+          </h3>
+          <SaludModeloBadge salud={salud} showMockTag />
+        </div>
+        <p className="text-slate-500 text-sm mb-3">
           Serie historica real (naranja){hasProphet ? ", prediccion Prophet (verde, modelo principal) y TBATS (azul punteado, comparativa)" : " y prediccion TBATS (azul)"}. La linea vertical punteada marca el inicio de la prediccion futura.
         </p>
-        <div className="h-[460px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={predData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="fecha_mes" tickFormatter={formatMonth} tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v) => formatInt(Number(v))} />
-              <Tooltip content={seriesTooltip} />
-              <Legend />
-              {cutoffDate && (
-                <ReferenceLine x={cutoffDate} stroke="#94a3b8" strokeDasharray="8 4"
-                  label={{ value: "Prediccion", position: "top", fill: "#64748b", fontSize: 12 }} />
+        {isDegraded && (
+          <p
+            style={{
+              margin: "0 0 14px 0",
+              padding: "10px 14px",
+              background: "#FEF8E6",
+              border: "1px solid #F1D9A4",
+              borderLeft: "3px solid #C4922A",
+              borderRadius: 4,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "#7A5A12",
+            }}
+          >
+            El error reciente del modelo ({formatDec(salud.rolling_mape)}%) supera
+            el rango habitual. Las predicciones siguientes se muestran con
+            fines orientativos. Se recomienda cautela en la interpretación.
+          </p>
+        )}
+        {isSilenced ? (
+          <div
+            className="h-[460px] flex items-center justify-center"
+            style={{
+              background: "#EEF2FA",
+              border: "1px solid #CBD5E0",
+              borderRadius: 4,
+              padding: 24,
+              textAlign: "center",
+            }}
+          >
+            <div style={{ maxWidth: 520 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#1A2B4A",
+                }}
+              >
+                Predicción suspendida
+              </p>
+              <p
+                style={{
+                  margin: "10px 0 0 0",
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  color: "#475569",
+                }}
+              >
+                El error reciente del modelo ({formatDec(salud.rolling_mape)}%)
+                supera el umbral de confianza del sistema. La próxima
+                actualización mensual recalculará el estado. Para análisis
+                crítico, consultar la sección de capacidades y límites.
+              </p>
+              {onNavigate && (
+                <button
+                  type="button"
+                  className="exec-btn-secondary exec-btn"
+                  style={{ marginTop: 16 }}
+                  onClick={() =>
+                    navigateToSection(onNavigate, "ficha-tecnica", "capacidades-limites")
+                  }
+                >
+                  Ver capacidades y límites del sistema
+                </button>
               )}
-              <Line type="monotone" dataKey="real" name="Real" stroke="#f97316" strokeWidth={3} dot={false} connectNulls={false} />
-              {hasProphet && (
-                <Line type="monotone" dataKey="pred_prophet" name="Prophet (principal)" stroke="#10b981" strokeWidth={3} dot={false} connectNulls={false} />
-              )}
-              <Line
-                type="monotone"
-                dataKey="prediccion"
-                name={hasProphet ? "TBATS (comparativa)" : "Prediccion TBATS"}
-                stroke="#2563eb"
-                strokeWidth={hasProphet ? 2 : 3}
-                strokeDasharray={hasProphet ? "6 3" : undefined}
-                dot={false}
-                connectNulls={false}
-              />
-
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+            </div>
+          </div>
+        ) : (
+          <div className="h-[460px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={predData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="fecha_mes" tickFormatter={formatMonth} tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v) => formatInt(Number(v))} />
+                <Tooltip content={seriesTooltip} />
+                <Legend />
+                {cutoffDate && (
+                  <ReferenceLine x={cutoffDate} stroke="#94a3b8" strokeDasharray="8 4"
+                    label={{ value: "Prediccion", position: "top", fill: "#64748b", fontSize: 12 }} />
+                )}
+                <Line type="monotone" dataKey="real" name="Real" stroke="#f97316" strokeWidth={3} dot={false} connectNulls={false} />
+                {hasProphet && (
+                  <Line type="monotone" dataKey="pred_prophet" name="Prophet (principal)" stroke="#10b981" strokeWidth={3} dot={false} connectNulls={false} />
+                )}
+                <Line
+                  type="monotone"
+                  dataKey="prediccion"
+                  name={hasProphet ? "TBATS (comparativa)" : "Prediccion TBATS"}
+                  stroke="#2563eb"
+                  strokeWidth={hasProphet ? 2 : 3}
+                  strokeDasharray={hasProphet ? "6 3" : undefined}
+                  dot={false}
+                  connectNulls={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        {/* 3.3 ligero: enlace inline a capacidades y limites */}
+        {onNavigate && !isSilenced && (
+          <p style={{ margin: "12px 0 0 0", textAlign: "right", fontSize: 11 }}>
+            <button
+              type="button"
+              onClick={() =>
+                navigateToSection(onNavigate, "ficha-tecnica", "capacidades-limites")
+              }
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                color: "#7A5A12",
+                cursor: "pointer",
+                textDecoration: "underline",
+                textDecorationStyle: "dotted",
+                fontSize: 11,
+              }}
+            >
+              ⚠ MAPE 8,56% en backtest — ver capacidades y límites del sistema
+            </button>
+          </p>
+        )}
       </section>
 
       {/* ══ MD DAILY SECTION ══ */}
@@ -397,7 +512,11 @@ export default function PredictivaTab() {
       </section>
 
       {/* ══ SIMULADOR DE ESCENARIOS ══ */}
-      <SimuladorEscenariosSection predData={predData} cutoffDate={cutoffDate} />
+      <SimuladorEscenariosSection
+        predData={predData}
+        cutoffDate={cutoffDate}
+        onNavigate={onNavigate}
+      />
     </div>
   );
 }

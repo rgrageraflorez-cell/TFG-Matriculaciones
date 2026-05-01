@@ -1,4 +1,5 @@
 import React from "react";
+import CapacidadesLimitesTabla from "./utils/CapacidadesLimitesTabla";
 
 const PERSPECTIVAS: { titulo: string; texto: string }[] = [
   {
@@ -146,6 +147,46 @@ export default function FichaTecnicaTab() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <h2
+        id="capacidades-limites"
+        className="exec-section-title"
+        style={{ marginBottom: 8, scrollMarginTop: 80 }}
+      >
+        Capacidades y límites del sistema
+      </h2>
+      <p className="exec-body" style={{ margin: "0 0 18px 0", maxWidth: 880 }}>
+        MatriX se ha diseñado con criterios explícitos de honestidad
+        metodológica. La siguiente tabla declara las capacidades validadas
+        del sistema y las limitaciones que el usuario debe tener presentes
+        al interpretar los resultados.
+      </p>
+      <div style={{ marginBottom: 32 }}>
+        <CapacidadesLimitesTabla
+          bannerPredictivo={
+            <p
+              style={{
+                margin: 0,
+                padding: "8px 12px",
+                background: "#FFFFFF",
+                border: "1px solid #E5E7EB",
+                borderLeft: "3px solid #C4922A",
+                borderRadius: 4,
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: "#6B7280",
+              }}
+            >
+              <strong style={{ color: "#7A5A12" }}>Aviso de
+              monitorización:</strong> el sistema de seguimiento de salud del
+              modelo (Protocolo de Silencio) está implementado en el
+              dashboard pero opera con datos de demostración hasta que se
+              acumule histórico de predicciones mes a mes. Detalle técnico
+              en TODO_PERSISTENCIA_PREDICCIONES.md.
+            </p>
+          }
+        />
       </div>
 
       <h2 className="exec-section-title" style={{ marginBottom: 14 }}>

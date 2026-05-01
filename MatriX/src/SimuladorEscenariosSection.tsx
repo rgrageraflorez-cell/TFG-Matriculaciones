@@ -10,8 +10,9 @@ import {
   Legend,
   ReferenceLine,
 } from "recharts";
-import type { PredictionRow } from "./types";
+import type { PredictionRow, TabId } from "./types";
 import { formatInt, formatDec, formatMonth } from "./utils.tsx";
+import { navigateToSection } from "./utils/scrollToSection";
 import {
   CATALOGO_EVENTOS_DEFAULT,
   cargarEscenariosCalibrados,
@@ -26,9 +27,10 @@ import {
 type Props = {
   predData: PredictionRow[];
   cutoffDate: string;
+  onNavigate?: (tab: TabId) => void;
 };
 
-export default function SimuladorEscenariosSection({ predData, cutoffDate }: Props) {
+export default function SimuladorEscenariosSection({ predData, cutoffDate, onNavigate }: Props) {
   const [activos, setActivos] = useState<Record<EventoId, boolean>>({
     moves: false,
     tipos_bce: false,
@@ -122,6 +124,27 @@ export default function SimuladorEscenariosSection({ predData, cutoffDate }: Pro
                       </span>
                     </div>
                     <p className="text-xs text-slate-500">{ev.descripcion}</p>
+                    {ev.id === "boom" && onNavigate && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigateToSection(onNavigate, "ficha-tecnica", "capacidades-limites")
+                        }
+                        style={{
+                          marginTop: 6,
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          color: "#7A5A12",
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                          textDecorationStyle: "dotted",
+                          fontSize: 11,
+                        }}
+                      >
+                        ⚠ Calibración limitada a un único episodio análogo — ver capacidades y límites
+                      </button>
+                    )}
                   </div>
 
                   {/* Toggle switch */}

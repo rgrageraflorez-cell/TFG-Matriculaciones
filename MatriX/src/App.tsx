@@ -53,10 +53,10 @@ export default function App() {
           )}
         </div>
         <div style={{ display: activeTab === "predictiva" ? "block" : "none" }}>
-          {visited.current.has("predictiva") && <PredictivaTab />}
+          {visited.current.has("predictiva") && <PredictivaTab onNavigate={handleTabChange} />}
         </div>
         <div style={{ display: activeTab === "cognitiva" ? "block" : "none" }}>
-          {visited.current.has("cognitiva") && <CognitivaTab />}
+          {visited.current.has("cognitiva") && <CognitivaTab onNavigate={handleTabChange} />}
         </div>
         <div style={{ display: activeTab === "suscripcion" ? "block" : "none" }}>
           {visited.current.has("suscripcion") && <SuscripcionTab />}

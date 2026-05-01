@@ -10,9 +10,10 @@ import {
   Cell,
 } from "recharts";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
-import type { MapDensityRow, GeoJsonType, PredictionRow, MonthlyBrandRow } from "./types";
+import type { MapDensityRow, GeoJsonType, PredictionRow, MonthlyBrandRow, TabId } from "./types";
 import { parseNumber, normalizeName, formatInt, formatDec, formatMonth, fetchCsv } from "./utils.tsx";
 import ScoreTerritorialSection from "./ScoreTerritorialSection";
+import { navigateToSection } from "./utils/scrollToSection";
 
 // Names and colors matching 02_clustering_municipios.R
 const CLUSTER_NAMES = [
@@ -68,7 +69,9 @@ const CATEGORY_STYLE: Record<string, { bg: string; border: string; badge: string
   cluster:    { bg: "bg-purple-50",  border: "border-purple-200", badge: "bg-purple-500",  label: "Perfil de cluster" },
 };
 
-export default function CognitivaTab() {
+type Props = { onNavigate?: (tab: TabId) => void };
+
+export default function CognitivaTab({ onNavigate }: Props = {}) {
   const [mapData, setMapData] = useState<MapDensityRow[]>([]);
   const [predData, setPredData] = useState<PredictionRow[]>([]);
   const [brandData, setBrandData] = useState<MonthlyBrandRow[]>([]);
@@ -662,10 +665,32 @@ export default function CognitivaTab() {
       {/* ── Cluster map ── */}
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
         <h2 className="text-xl font-semibold mb-1">Mapa de clusters municipales</h2>
-        <p className="text-slate-500 text-sm mb-5">
+        <p className="text-slate-500 text-sm mb-2">
           Cada municipio se clasifica según su ratio de matriculaciones y tamaño poblacional.
           Haz click en un municipio para ver su perfil.
         </p>
+        {onNavigate && (
+          <p style={{ margin: "0 0 16px 0", fontSize: 11 }}>
+            <button
+              type="button"
+              onClick={() =>
+                navigateToSection(onNavigate, "ficha-tecnica", "capacidades-limites")
+              }
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                color: "#7A5A12",
+                cursor: "pointer",
+                textDecoration: "underline",
+                textDecorationStyle: "dotted",
+                fontSize: 11,
+              }}
+            >
+              ⚠ Tipologías descriptivas, no causales — ver capacidades y límites
+            </button>
+          </p>
+        )}
 
         {!geoJson ? (
           <div className="flex items-center justify-center h-[400px] bg-slate-50 rounded-2xl text-slate-400">
