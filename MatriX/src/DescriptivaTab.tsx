@@ -15,6 +15,7 @@ import type { MonthlyAggRow, MonthlyBrandRow, MapDensityRow, GeoJsonType } from 
 import { parseNumber, normalizeName, formatInt, formatDec, formatMonth, formatISODate, fetchCsv, seriesTooltip } from "./utils.tsx";
 import { generarInformeTerritorial } from "./utils/generarInformeTerritorial";
 import GruposEmpresarialesSection from "./GruposEmpresarialesSection";
+import CuotaMarcaMapSection from "./CuotaMarcaMapSection";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -34,6 +35,10 @@ export default function DescriptivaTab() {
   const [selectedMapDate, setSelectedMapDate] = useState("");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
+  // Hover sincronizado entre los dos mapas (densidad y cuota por marca):
+  // pasar el raton por una provincia en cualquiera de los dos resalta la
+  // misma provincia en ambos. El tooltip sigue siendo local de cada mapa.
+  const [hoveredProvince, setHoveredProvince] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [progressMessage, setProgressMessage] = useState<string>("");
   const [mapTooltip, setMapTooltip] = useState<{
@@ -311,7 +316,9 @@ export default function DescriptivaTab() {
       {/* Análisis por grupo empresarial */}
       <GruposEmpresarialesSection brandData={brandData} dateRange={dateRange} />
 
-      {/* Map */}
+      {/* Mapas territoriales: densidad + cuota por marca, lado a lado en
+          desktop, apilados en movil/tablet. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-center justify-between mb-5">
           <div>
@@ -350,15 +357,20 @@ export default function DescriptivaTab() {
                     const provName = String(geo.properties.name ?? "");
                     const provData = provLookup[provCode];
                     const isSelected = selectedProvince === provName;
+                    const isHovered = hoveredProvince === provName;
+                    // Prioridad visual: hover (gold) > selected (red) > default
+                    const stroke = isHovered ? "#C4922A" : isSelected ? "#dc2626" : "#94a3b8";
+                    const strokeWidth = isHovered || isSelected ? 2 : 0.4;
                     return (
                       <Geography
                         key={geo.rsmKey}
                         geography={geo}
                         fill={provData ? colorScale(provData.ratio_x1000) : "#e8e5e0"}
-                        stroke={isSelected ? "#dc2626" : "#94a3b8"}
-                        strokeWidth={isSelected ? 2 : 0.4}
+                        stroke={stroke}
+                        strokeWidth={strokeWidth}
                         onClick={() => setSelectedProvince(provName)}
                         onMouseEnter={(evt) => {
+                          setHoveredProvince(provName);
                           setMapTooltip({
                             name: provName,
                             matriculaciones: provData?.matriculaciones ?? 0,
@@ -376,7 +388,10 @@ export default function DescriptivaTab() {
                             y: evt.clientY,
                           });
                         }}
-                        onMouseLeave={() => setMapTooltip(null)}
+                        onMouseLeave={() => {
+                          setHoveredProvince(null);
+                          setMapTooltip(null);
+                        }}
                         style={{
                           default: { outline: "none" },
                           hover: { outline: "none", opacity: 0.75, cursor: "pointer" },
@@ -413,9 +428,19 @@ export default function DescriptivaTab() {
           ))}
           <span className="text-xs text-slate-500 ml-2">Mayor</span>
         </div>
+      </section>
 
-        {/* Informe territorial */}
-        <div className="mt-6 pt-6 border-t border-slate-200">
+      <CuotaMarcaMapSection
+        geoJson={geoJson}
+        hoveredProvince={hoveredProvince}
+        setHoveredProvince={setHoveredProvince}
+      />
+      </div>
+
+      {/* Informe territorial: bloque independiente debajo de los mapas.
+          Reacciona al click en el mapa de densidad (selectedProvince). */}
+      <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <div>
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Informe territorial</h3>

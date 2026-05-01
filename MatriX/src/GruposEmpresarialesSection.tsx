@@ -17,6 +17,8 @@ import {
 import type { MonthlyBrandRow } from "./types";
 import { formatInt, formatDec, formatMonth, seriesTooltip } from "./utils.tsx";
 import { getGrupo, colorParaGrupo } from "./utils/gruposEmpresariales";
+import { colorForVariation } from "./utils/colorScales";
+import DivergentLegend from "./utils/DivergentLegend";
 
 type Props = {
   brandData: MonthlyBrandRow[];
@@ -121,6 +123,11 @@ export default function GruposEmpresarialesSection({ brandData, dateRange }: Pro
     const actual = sumaPorGrupo(anioActual);
     const prev = sumaPorGrupo(anioPrev);
     const grupos = new Set<string>([...actual.keys(), ...prev.keys()]);
+    // Filtramos "Otros" del grafico de variacion: agrega marcas no
+    // comparables entre si y su variacion no es interpretable. El dataset
+    // crudo no se toca; los graficos 1 (cuotas) y 2 (evolucion) si lo
+    // siguen incluyendo.
+    grupos.delete("Otros");
     const variaciones = [...grupos]
       .map((grupo) => {
         const a = actual.get(grupo) ?? 0;
@@ -320,7 +327,10 @@ export default function GruposEmpresarialesSection({ brandData, dateRange }: Pro
 
       {/* ── Gráfico 3: variación interanual ── */}
       <div>
-        <h3 className="text-base font-semibold mb-1">Variación interanual por grupo empresarial</h3>
+        <h3 className="text-base font-semibold mb-1">Variación interanual por grupos principales</h3>
+        <p className="text-slate-500 text-sm mb-1">
+          Excluye la categoría 'Otros' por agrupar marcas no comparables entre sí.
+        </p>
         <p className="text-slate-500 text-sm mb-4">
           {variacion.disponible
             ? `Crecimiento porcentual ${variacion.anioActual} vs ${variacion.anioPrev}.`
@@ -360,7 +370,11 @@ export default function GruposEmpresarialesSection({ brandData, dateRange }: Pro
                   {variacion.variaciones.map((v) => (
                     <Cell
                       key={v.grupo}
-                      fill={v.variacionPct >= 0 ? COLOR_VERDE : COLOR_ROJO}
+                      // Color por gradiente divergente segun signo y
+                      // magnitud de la variacion. Es REDUNDANTE con la
+                      // altura de la barra (decision consciente: refuerza
+                      // la lectura sin anadir dimension nueva).
+                      fill={colorForVariation(v.variacionPct)}
                     />
                   ))}
                   <LabelList
@@ -378,6 +392,7 @@ export default function GruposEmpresarialesSection({ brandData, dateRange }: Pro
             Sin datos suficientes — se requieren 2 años completos en el período filtrado.
           </div>
         )}
+        {variacion.disponible && <DivergentLegend />}
       </div>
     </section>
   );
