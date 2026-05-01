@@ -24,12 +24,18 @@ const COLOR_BUCKETS = [
 ];
 const COLOR_ZERO = "#F1F2F4"; // gris muy claro, claramente distinto de Q1
 
-type RawRow = {
+/**
+ * Fila normalizada del CSV agregado marca x provincia x anio. Se exporta
+ * para que componentes hermanos (MarcasChinasSection) puedan tipar el
+ * mismo dato cuando lo reciben por props desde DescriptivaTab.
+ */
+export type MarcaProvinciaRow = {
   anio: string;
   marca: string;
   cod_provincia: string;
   matriculaciones: string;
 };
+type RawRow = MarcaProvinciaRow;
 
 type Aggregated = {
   // marca -> cod_prov -> matriculaciones (anio fijo)
@@ -52,14 +58,22 @@ type Props = {
   geoJson: GeoJsonType | null;
   hoveredProvince: string | null;
   setHoveredProvince: (p: string | null) => void;
+  /**
+   * Filas del CSV agregado marca x provincia x anio. Si se pasan por props,
+   * el componente las usa directamente y NO hace fetch. Si no, fetch como
+   * antes (backward compatible). Permite que DescriptivaTab cargue el CSV
+   * una sola vez y lo comparta con MarcasChinasSection.
+   */
+  marcaProvinciaRows?: MarcaProvinciaRow[] | null;
 };
 
 export default function CuotaMarcaMapSection({
   geoJson,
   hoveredProvince,
   setHoveredProvince,
+  marcaProvinciaRows,
 }: Props) {
-  const [rows, setRows] = useState<RawRow[] | null>(null);
+  const [rowsFetched, setRowsFetched] = useState<RawRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [marcaSel, setMarcaSel] = useState<string>("");
   const [tooltip, setTooltip] = useState<{
@@ -72,8 +86,14 @@ export default function CuotaMarcaMapSection({
     fiabilidad: FiabilidadOutput;
   } | null>(null);
 
-  // ── Carga del CSV pre-agregado ──────────────────────────────────────────
+  // Si se pasan filas por props, las usamos directamente; en otro caso
+  // fetch local. Esto permite el refactor de subir la carga a DescriptivaTab
+  // sin romper consumers que monten el componente solo.
+  const rows = marcaProvinciaRows ?? rowsFetched;
+
+  // ── Carga del CSV pre-agregado (solo si NO viene por props) ──────────
   useEffect(() => {
+    if (marcaProvinciaRows) return;
     let cancelled = false;
     fetchCsv<RawRow>("/df_marca_provincia_anual.csv", (r) => {
       const anio = String(r.anio ?? "").trim();
@@ -90,7 +110,7 @@ export default function CuotaMarcaMapSection({
     })
       .then((data) => {
         if (cancelled) return;
-        setRows(data);
+        setRowsFetched(data);
       })
       .catch((e: Error) => {
         if (cancelled) return;
@@ -99,7 +119,7 @@ export default function CuotaMarcaMapSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [marcaProvinciaRows]);
 
   // ── Agregaciones derivadas ──────────────────────────────────────────────
   const data: Aggregated | null = useMemo(() => {

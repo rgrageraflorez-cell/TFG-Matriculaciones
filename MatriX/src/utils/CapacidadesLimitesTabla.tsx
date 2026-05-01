@@ -61,6 +61,12 @@ const FILAS: Fila[] = [
     noPuede:
       "Atribuir causalidad a los desvíos estructurales detectados (qué los provoca, cuánto durarán).",
   },
+  {
+    puede:
+      "Analizar la penetración agregada de fabricantes con sede en China en el mercado español, con evolución temporal y distribución provincial.",
+    noPuede:
+      "Clasificar automáticamente marcas por origen. La clasificación es un listado estático que requiere actualización manual cuando entran nuevos fabricantes al mercado.",
+  },
 ];
 
 // Tonos de fondo: izquierda crema neutro, derecha ambar muy suave (no rojo:

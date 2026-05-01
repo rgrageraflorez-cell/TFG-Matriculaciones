@@ -15,7 +15,8 @@ import type { MonthlyAggRow, MonthlyBrandRow, MapDensityRow, GeoJsonType } from 
 import { parseNumber, normalizeName, formatInt, formatDec, formatMonth, formatISODate, fetchCsv, seriesTooltip } from "./utils.tsx";
 import { generarInformeTerritorial } from "./utils/generarInformeTerritorial";
 import GruposEmpresarialesSection from "./GruposEmpresarialesSection";
-import CuotaMarcaMapSection from "./CuotaMarcaMapSection";
+import CuotaMarcaMapSection, { type MarcaProvinciaRow } from "./CuotaMarcaMapSection";
+import MarcasChinasSection from "./MarcasChinasSection";
 import {
   descomponerVariacion,
   getPerfilEstacionalEmpirico,
@@ -34,6 +35,10 @@ export default function DescriptivaTab() {
   const [brandData, setBrandData] = useState<MonthlyBrandRow[]>([]);
   const [mapData, setMapData] = useState<MapDensityRow[]>([]);
   const [geoJson, setGeoJson] = useState<GeoJsonType | null>(null);
+  // CSV agregado marca x provincia x anio. Cargado aqui una sola vez y
+  // pasado por props a CuotaMarcaMapSection y MarcasChinasSection para
+  // evitar duplicacion de fetch.
+  const [marcaProvinciaRows, setMarcaProvinciaRows] = useState<MarcaProvinciaRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,6 +108,24 @@ export default function DescriptivaTab() {
           .then((r) => r.json())
           .then((geo) => { if (!cancelled) setGeoJson(geo); })
           .catch(() => {}); // non-critical
+
+        // CSV agregado marca x provincia x anio (fetch unico para
+        // CuotaMarcaMapSection + MarcasChinasSection).
+        fetchCsv<MarcaProvinciaRow>("/df_marca_provincia_anual.csv", (r) => {
+          const anio = String(r.anio ?? "").trim();
+          const marca = String(r.marca ?? "").trim();
+          const cod = String(r.cod_provincia ?? "").trim().padStart(2, "0");
+          const mat = parseNumber(r.matriculaciones);
+          if (!anio || !marca || !cod || mat == null) return null;
+          return {
+            anio,
+            marca,
+            cod_provincia: cod,
+            matriculaciones: String(mat),
+          };
+        })
+          .then((data) => { if (!cancelled) setMarcaProvinciaRows(data); })
+          .catch(() => {}); // non-critical: cada componente decide su fallback
 
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? "Error al cargar datos");
@@ -515,6 +538,7 @@ export default function DescriptivaTab() {
         geoJson={geoJson}
         hoveredProvince={hoveredProvince}
         setHoveredProvince={setHoveredProvince}
+        marcaProvinciaRows={marcaProvinciaRows}
       />
       </div>
 
@@ -561,6 +585,15 @@ export default function DescriptivaTab() {
           </div>
         </div>
       </section>
+
+      {/* ── Irrupción de fabricantes chinos (analisis agregado) ── */}
+      <MarcasChinasSection
+        brandData={brandData}
+        marcaProvinciaRows={marcaProvinciaRows}
+        geoJson={geoJson}
+        hoveredProvince={hoveredProvince}
+        setHoveredProvince={setHoveredProvince}
+      />
     </div>
   );
 }
