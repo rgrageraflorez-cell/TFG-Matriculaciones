@@ -1,14 +1,17 @@
 name: Monthly alerts and executive report
 
-# Se ejecuta el dia 1 de cada mes a las 05:00 UTC (06:00 hora peninsular en
-# invierno, 07:00 en verano). En esa ventana la DGT ya ha publicado los
-# microdatos del mes anterior y la pipeline R local los ha consolidado.
+# Se ejecuta el dia 10 de cada mes a las 05:00 UTC (06:00 hora peninsular
+# en invierno, 07:00 en verano). El dia 10 (no el 1) porque la DGT publica
+# el ZIP mensual agregado con 2-3 semanas de retraso respecto al fin de
+# mes; el cron local Windows tambien corre el dia 10 a las 04:00 (ver
+# pipeline/install_schedule.bat). Asi este Action se ejecuta sobre datos
+# del mes ya consolidados y las alertas/informes son del periodo correcto.
 #
 # Tambien permite ejecucion manual desde la pestana Actions de GitHub
 # (workflow_dispatch) para pruebas o reenvios puntuales.
 on:
   schedule:
-    - cron: "0 5 1 * *"
+    - cron: "0 5 10 * *"
   workflow_dispatch:
     inputs:
       run_alerts:
