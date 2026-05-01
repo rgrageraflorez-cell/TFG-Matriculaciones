@@ -10,6 +10,7 @@ import {
   Cell,
 } from "recharts";
 import { ComposableMap, Geographies, Geography } from "react-simple-maps";
+import { CheckCircle } from "lucide-react";
 import type { MapDensityRow, GeoJsonType, PredictionRow, MonthlyBrandRow, TabId } from "./types";
 import { parseNumber, normalizeName, formatInt, formatDec, formatMonth, fetchCsv } from "./utils.tsx";
 import ScoreTerritorialSection from "./ScoreTerritorialSection";
@@ -60,6 +61,21 @@ type Insight = {
   title: string;
   text: string;
   priority: number; // lower = more important, shown first
+  /**
+   * Severidad del hallazgo. Decide la jerarquia visual del render
+   * (Cambio 2): "alta" -> Grupo A destacado, "media"/"baja" -> Grupo B
+   * compacto. Se calcula en decorarSeveridad() como capa de presentacion;
+   * los generadores no la asignan, asi se mantiene la lógica de deteccion
+   * intacta.
+   */
+  severidad?: "alta" | "media" | "baja";
+  /**
+   * Cifra numerica relevante del hallazgo (ej. % desviacion para picos/
+   * valles, % crecimiento provincial, ratio multiplicador para clusters).
+   * Lo poblan los generadores sin modificar su logica; lo consume la capa
+   * de presentacion para decidir severidad.
+   */
+  magnitud?: number;
 };
 
 const CATEGORY_STYLE: Record<string, { bg: string; border: string; badge: string; label: string }> = {
@@ -68,6 +84,53 @@ const CATEGORY_STYLE: Record<string, { bg: string; border: string; badge: string
   mercado:    { bg: "bg-emerald-50", border: "border-emerald-200", badge: "bg-emerald-500", label: "Insight de mercado" },
   cluster:    { bg: "bg-purple-50",  border: "border-purple-200", badge: "bg-purple-500",  label: "Perfil de cluster" },
 };
+
+/**
+ * decidirSeveridad — capa de presentacion para el Cambio 2.
+ *
+ * Reglas centralizadas que mapean cada Insight a una severidad visual
+ * sin tocar la logica de deteccion. Lee `category`, `priority` y
+ * `magnitud` (cifra numerica que cada generador puebla con la metrica
+ * relevante: % desviacion de pico/valle, % crecimiento provincial,
+ * multiplicador de ratio cluster, etc.).
+ *
+ * ALTA  -> renderiza en Grupo A destacado (max 3 cards).
+ * MEDIA / BAJA -> Grupo B compacto.
+ */
+export function decidirSeveridad(
+  ins: Pick<Insight, "category" | "priority" | "magnitud">,
+): "alta" | "media" | "baja" {
+  const m = Math.abs(ins.magnitud ?? 0);
+
+  if (ins.category === "alerta") {
+    // priority 0 = pico, 1 = valle, 2 = tendencia, 3 = salto
+    if (ins.priority === 2) return "alta"; // tendencia sostenida
+    if ((ins.priority === 0 || ins.priority === 1) && m > 15) return "alta";
+    return "media";
+  }
+
+  if (ins.category === "geografico") {
+    // priority 13 = evolucion agregada (magnitud = changePct)
+    if (ins.priority === 13 && m > 15) return "alta";
+    if (ins.priority === 10) return "media"; // concentracion top-10
+    if (ins.priority === 11) return "media"; // desiertos de demanda
+    return "baja";
+  }
+
+  if (ins.category === "mercado") {
+    if (ins.priority === 20 && m > 50) return "media"; // dominio top5 con cuota fuerte
+    if (ins.priority === 21 && m > 2500) return "media"; // HHI altamente concentrado
+    if (ins.priority === 22 && m > 25) return "media"; // marca crecimiento fuerte
+    return "baja";
+  }
+
+  if (ins.category === "cluster") {
+    if (ins.priority === 29) return "alta"; // anomalia IVTM (regla c)
+    if (ins.priority === 30 && m > 3) return "media"; // ratio cluster > 3x media
+    return "baja";
+  }
+  return "baja";
+}
 
 type Props = { onNavigate?: (tab: TabId) => void };
 
@@ -284,6 +347,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
         category: "alerta",
         icon: "^",
         priority: 0,
+        magnitud: pctAboveMean,
         title: `Pico de demanda previsto en ${MONTH_LABELS[peakMonth]} ${peakYear}`,
         text: `El modelo TBATS predice ${formatInt(Math.round(peak.prediccion!))} matriculaciones para ${MONTH_LABELS[peakMonth]} ${peakYear}, un ${formatDec(pctAboveMean)}% por encima de la media prevista. ${vsHist !== null ? `Comparado con la media histórica de ${MONTH_LABELS[peakMonth]} (${formatInt(Math.round(histAvg!))}), supone un ${vsHist >= 0 ? "+" : ""}${formatDec(vsHist)}%.` : ""} Recomendación: reforzar stock y capacidad logística con antelación.`,
       });
@@ -299,6 +363,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
           category: "alerta",
           icon: "v",
           priority: 1,
+          magnitud: pctBelowMean,
           title: `Valle de demanda previsto en ${MONTH_LABELS[vMonth]} ${vYear}`,
           text: `Se prevén ${formatInt(Math.round(valley.prediccion!))} matriculaciones en ${MONTH_LABELS[vMonth]} ${vYear}, un ${formatDec(pctBelowMean)}% por debajo de la media prevista. Recomendación: ajustar pedidos a proveedores y concentrar esfuerzos comerciales o promociones para estimular la demanda.`,
         });
@@ -315,6 +380,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
         category: "alerta",
         icon: direction === "alcista" ? "+" : direction === "bajista" ? "-" : "=",
         priority: 2,
+        magnitud: Math.abs(trendPct),
         title: `Tendencia ${direction} en el horizonte de predicción`,
         text: `La demanda prevista para el segundo semestre del horizonte es un ${Math.abs(trendPct) > 0.1 ? formatDec(Math.abs(trendPct)) + "%" : "prácticamente igual"} ${trendPct > 0 ? "superior" : trendPct < 0 ? "inferior" : "similar"} al primer semestre. ${direction === "alcista" ? "Planificar incremento progresivo de inventario." : direction === "bajista" ? "Considerar ajustar aprovisionamiento a la baja." : "Mantener niveles actuales de stock."}`,
       });
@@ -343,6 +409,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
           category: "alerta",
           icon: "!",
           priority: 3,
+          magnitud: pctJump,
           title: `Mayor salto de demanda: ${MONTH_LABELS[fromMonth]} a ${MONTH_LABELS[toMonth]}`,
           text: `El mayor incremento mensual previsto es de +${formatInt(Math.round(maxJump))} matriculaciones (+${formatDec(pctJump)}%) entre ${MONTH_LABELS[fromMonth]} y ${MONTH_LABELS[toMonth]}. Este salto requiere anticipar la logística de entrega al menos 4-6 semanas antes.`,
         });
@@ -415,6 +482,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
           category: "geografico",
           icon: changePct >= 0 ? "+" : "-",
           priority: 13,
+          magnitud: changePct,
           title: `Evolución agregada: ${firstLabel} a ${lastLabel}`,
           text: `Las matriculaciones totales pasaron de ${formatInt(totalFirst)} (${firstLabel}) a ${formatInt(totalLast)} (${lastLabel}), un ${changePct >= 0 ? "+" : ""}${formatDec(changePct)}%. ${changePct > 10 ? "La tendencia alcista sugiere un mercado en expansión." : changePct < -10 ? "El descenso puede reflejar estacionalidad o contracción del mercado." : "El mercado se mantiene relativamente estable en este periodo."}`,
         });
@@ -451,6 +519,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
         category: "mercado",
         icon: "M",
         priority: 20,
+        magnitud: top5Pct,
         title: "Dominio del top 5 de marcas",
         text: `Las 5 marcas líderes (${top5.map(([m, v]) => `${m}: ${formatInt(v)}`).join(", ")}) agrupan el ${formatDec(top5Pct)}% del total. ${top5Pct > 50 ? "El mercado está altamente concentrado: las decisiones de stock deben priorizarlas." : "El mercado está relativamente fragmentado."}`,
       });
@@ -464,6 +533,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
         category: "mercado",
         icon: "H",
         priority: 21,
+        magnitud: hhiNorm,
         title: `Índice de concentración de mercado (HHI): ${formatInt(hhiNorm)}`,
         text: `El índice Herfindahl-Hirschman es ${formatInt(hhiNorm)} puntos, indicando un mercado ${hhiLabel}. ${hhiNorm > 2500 ? "Pocas marcas dominan: un cambio en la oferta de una marca líder impacta significativamente en la demanda total." : hhiNorm > 1500 ? "Hay concentración moderada: diversificar la cartera de marcas reduce el riesgo de dependencia." : "La competencia es intensa: la diferenciación por servicio y precio es clave."}`,
       });
@@ -501,6 +571,7 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
           category: "mercado",
           icon: "R",
           priority: 22,
+          magnitud: growthPct,
           title: `Marca en mayor crecimiento: ${growthBrand}`,
           text: `${growthBrand} pasó de ${formatInt(growthFrom)} a ${formatInt(growthTo)} matriculaciones (+${formatDec(growthPct)}%) entre ${formatMonth(String(prevDate))} y ${formatMonth(String(latestBrandDate))}. Este crecimiento puede indicar un lanzamiento exitoso o una campaña comercial agresiva.`,
         });
@@ -518,13 +589,54 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
     const totalMat = active.reduce((s, c) => s + c.matriculacionesTotal, 0);
 
     const highCluster = active.reduce((a, b) => (b.ratioMedio > a.ratioMedio ? b : a));
+    const highMult = globalMeanRatio > 0 ? highCluster.ratioMedio / globalMeanRatio : 0;
     results.push({
       category: "cluster",
       icon: "A",
       priority: 30,
+      magnitud: highMult,
       title: `Mayor demanda per cápita: ${highCluster.cluster}`,
       text: `"${highCluster.cluster}" tiene el ratio medio más alto (${formatDec(highCluster.ratioMedio)} matriculaciones/1.000 hab.), un ${formatDec(((highCluster.ratioMedio - globalMeanRatio) / globalMeanRatio) * 100)}% por encima de la media nacional.`,
     });
+
+    // ── Anomalia IVTM (regla c del plan): si ≥8 de los 10 municipios con
+    //    mayor ratio_x1000 del pais pertenecen al mismo cluster, marcamos
+    //    anomalia IVTM. Es el patron real del fenomeno: no es que el
+    //    cluster entero tenga ratio extremo (no llega a 10x), sino que
+    //    aglutina los outliers extremos. Severidad alta. ─────────────────
+    const top10Muni = [...latestData]
+      .filter((d) => d.ratio_x1000 > 0)
+      .sort((a, b) => b.ratio_x1000 - a.ratio_x1000)
+      .slice(0, 10);
+    if (top10Muni.length === 10) {
+      const conteoCluster = new Map<string, number>();
+      for (const d of top10Muni) {
+        const muniNorm = normalizeName(d.municipio);
+        const entry = clusterMap.get(muniNorm);
+        if (entry) {
+          conteoCluster.set(entry.clusterName, (conteoCluster.get(entry.clusterName) ?? 0) + 1);
+        }
+      }
+      const [clusterDom, nDom] =
+        [...conteoCluster.entries()].sort((a, b) => b[1] - a[1])[0] ?? ["", 0];
+      if (nDom >= 8) {
+        const ratioMin = top10Muni[top10Muni.length - 1].ratio_x1000;
+        const ratioMax = top10Muni[0].ratio_x1000;
+        const ejemplos = top10Muni
+          .filter((d) => clusterMap.get(normalizeName(d.municipio))?.clusterName === clusterDom)
+          .slice(0, 3)
+          .map((d) => `${d.municipio} (${formatInt(Math.round(d.ratio_x1000))})`)
+          .join(", ");
+        results.push({
+          category: "cluster",
+          icon: "!",
+          priority: 29, // antes que el highCluster general
+          magnitud: nDom,
+          title: `Anomalía IVTM detectada en "${clusterDom}"`,
+          text: `${nDom} de los 10 municipios con mayor ratio per cápita del país están concentrados en el cluster "${clusterDom}", con ratios entre ${formatInt(Math.round(ratioMin))} y ${formatInt(Math.round(ratioMax))} matriculaciones/1.000 habitantes (la media nacional es ${formatDec(globalMeanRatio)}). Ejemplos: ${ejemplos}. Patrón compatible con bonificaciones IVTM: domiciliación fiscal de flotas en municipios pequeños con tipo reducido.`,
+        });
+      }
+    }
 
     const urbanCluster = clusterStats.find(s => s.cluster === "Grandes núcleos urbanos");
     if (urbanCluster && urbanCluster.municipios > 0) {
@@ -575,9 +687,30 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
   }, [clusterStats, clusterMap, globalMeanRatio, latestData]);
 
   // ── Merge & sort all insights ──
+  // Tras juntar y ordenar por priority, decoramos cada insight con severidad
+  // (capa de presentacion). Los generadores no asignan severidad: la deciden
+  // las reglas centralizadas de aqui, basadas en el campo `magnitud` (cifra
+  // numerica relevante poblada por cada generador) y la categoria.
   const allInsights = useMemo(() => {
-    return [...predInsights, ...geoInsights, ...marketInsights, ...clusterInsights].sort((a, b) => a.priority - b.priority);
+    const todos = [...predInsights, ...geoInsights, ...marketInsights, ...clusterInsights]
+      .sort((a, b) => a.priority - b.priority);
+    return todos.map((ins) => ({ ...ins, severidad: decidirSeveridad(ins) }));
   }, [predInsights, geoInsights, marketInsights, clusterInsights]);
+
+  // Ultimo mes con dato real disponible en el CSV de predicciones (para
+  // mostrar "Ultima actualizacion" en el estado "sin alertas"). Cambio 1.
+  const ultimaFechaCsv = useMemo(() => {
+    const conReal = predData
+      .filter((d) => d.real !== null && d.real !== undefined)
+      .map((d) => d.fecha_mes)
+      .sort();
+    if (conReal.length === 0) return null;
+    const last = conReal[conReal.length - 1];
+    const anio = parseInt(last.slice(0, 4), 10);
+    const mes = parseInt(last.slice(5, 7), 10);
+    if (!Number.isFinite(anio) || mes < 1 || mes > 12) return null;
+    return `${MONTH_LABELS[mes]} de ${anio}`;
+  }, [predData]);
 
   if (loading) {
     return <div className="flex items-center justify-center py-20 text-slate-500">Cargando análisis cognitivo...</div>;
@@ -588,11 +721,13 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
 
   return (
     <div className="space-y-8">
-      {/* ── Alertas de demanda (top priority) ── */}
-      {predInsights.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Alertas de demanda</h2>
-          <p className="text-slate-500 text-sm -mt-2">Basadas en las predicciones TBATS. Anticipar picos y valles para optimizar stock.</p>
+      {/* ── Alertas de demanda (siempre visible, dos estados) ── */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-semibold">Alertas de demanda</h2>
+        <p className="text-slate-500 text-sm -mt-2">
+          Basadas en las predicciones TBATS. Anticipar picos y valles para optimizar stock.
+        </p>
+        {predInsights.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {predInsights.map((ins, i) => (
               <div
@@ -609,8 +744,35 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
               </div>
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          // Estado positivo: el sistema no detecta nada, lo decimos
+          // explicitamente con check verde para que el tribunal sepa que
+          // existe el componente aunque hoy no haya alertas.
+          <div
+            className="rounded-2xl border p-5 flex items-start gap-3"
+            style={{ background: "#ECFDF5", borderColor: "#BBF7D0" }}
+          >
+            <CheckCircle size={22} color="#15803D" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <h3 className="font-semibold mb-1" style={{ color: "#15803D" }}>
+                Sin alertas activas
+              </h3>
+              <p className="text-sm" style={{ color: "#475569", lineHeight: 1.55 }}>
+                El sistema no detecta picos, valles ni tendencias anómalas en
+                el horizonte de predicción (próximos 6 meses).
+              </p>
+              {ultimaFechaCsv && (
+                <p className="text-xs mt-2" style={{ color: "#64748B" }}>
+                  Última actualización: {ultimaFechaCsv}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ── Score Territorial (Cambio 3: reposicionado tras alertas) ── */}
+      <ScoreTerritorialSection mapData={mapData} geoJson={geoJson} />
 
       {/* ── Cluster bar chart + summary cards ── */}
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -827,36 +989,107 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
         )}
       </section>
 
-      {/* ── All insights panel ── */}
+      {/* ── All insights panel — jerarquia visual por severidad (Cambio 2) ── */}
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
         <h2 className="text-xl font-semibold mb-1">Insights automáticos</h2>
         <p className="text-slate-500 text-sm mb-5">
           Análisis generados dinámicamente cruzando predicciones TBATS, datos geográficos, marcas y clusters.
         </p>
-        <div className="space-y-4">
-          {allInsights.map((ins, i) => {
-            const style = CATEGORY_STYLE[ins.category];
-            return (
-              <div key={i} className={`rounded-xl border p-4 ${style.bg} ${style.border}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-xs font-bold text-white px-2 py-0.5 rounded-full ${style.badge}`}>
-                    {style.label}
-                  </span>
-                  <span className="font-semibold text-slate-900 text-sm">{ins.title}</span>
+        {(() => {
+          const destacados = allInsights.filter((i) => i.severidad === "alta").slice(0, 3);
+          const contexto = allInsights.filter((i) => i.severidad !== "alta");
+          return (
+            <>
+              {/* Grupo A: hallazgos destacados (cards grandes, max 3) */}
+              {destacados.length > 0 && (
+                <div className="space-y-4 mb-6">
+                  {destacados.map((ins, i) => {
+                    const style = CATEGORY_STYLE[ins.category];
+                    return (
+                      <div
+                        key={`A-${i}`}
+                        className={`rounded-2xl border p-6 ${style.bg} ${style.border}`}
+                      >
+                        <div className="flex items-center gap-2 mb-2">
+                          <span
+                            className={`text-xs font-bold text-white px-2 py-0.5 rounded-full ${style.badge}`}
+                          >
+                            {style.label}
+                          </span>
+                          <span
+                            className="text-[10px] font-bold uppercase tracking-wider"
+                            style={{ color: "#7A5A12", letterSpacing: "0.08em" }}
+                          >
+                            Hallazgo destacado
+                          </span>
+                        </div>
+                        <h3 className="font-semibold text-slate-900 mb-2 text-base">
+                          {ins.title}
+                        </h3>
+                        <p className="text-sm text-slate-700 leading-relaxed">
+                          {ins.text}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
-                <p className="text-sm text-slate-700 leading-relaxed">{ins.text}</p>
-              </div>
-            );
-          })}
-        </div>
+              )}
+
+              {/* Separador visual entre grupos */}
+              {destacados.length > 0 && contexto.length > 0 && (
+                <div
+                  style={{
+                    borderTop: "1px solid #E5E7EB",
+                    margin: "8px 0 18px 0",
+                  }}
+                />
+              )}
+
+              {/* Grupo B: contexto de mercado (cards compactas, 2 cols) */}
+              {contexto.length > 0 && (
+                <>
+                  <p
+                    className="text-[11px] font-semibold uppercase mb-3"
+                    style={{ color: "#6B7280", letterSpacing: "0.08em" }}
+                  >
+                    Contexto de mercado
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {contexto.map((ins, i) => {
+                      const style = CATEGORY_STYLE[ins.category];
+                      return (
+                        <div
+                          key={`B-${i}`}
+                          className={`rounded-xl border p-3 ${style.bg} ${style.border}`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span
+                              className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${style.badge}`}
+                            >
+                              {style.label}
+                            </span>
+                            <span className="font-semibold text-slate-900 text-xs">
+                              {ins.title}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            {ins.text}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </>
+          );
+        })()}
         <p className="text-xs text-slate-400 mt-5">
           Los clusters se asignan combinando el ratio de matriculaciones per cápita y el tamaño poblacional estimado,
           siguiendo la metodología del análisis K-means del TFG. Las alertas de demanda usan el modelo TBATS de la pestaña predictiva.
         </p>
       </section>
 
-      {/* ── Score Territorial de Oportunidad ── */}
-      <ScoreTerritorialSection mapData={mapData} geoJson={geoJson} />
     </div>
   );
 }

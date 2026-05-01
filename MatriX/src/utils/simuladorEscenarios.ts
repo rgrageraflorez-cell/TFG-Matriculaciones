@@ -25,7 +25,11 @@ export type EventoId =
   | "recesion"
   | "boom"
   | "semiconductores"
-  | "campana_sectorial";
+  | "campana_sectorial"
+  | "personalizado";
+
+/** Forma del vector aplicado por el escenario personalizado del simulador. */
+export type TipoImpacto = "gradual" | "sostenido" | "brusco";
 
 export type EventoCatalogo = {
   id: EventoId;
@@ -372,4 +376,54 @@ export function setEscenarioActivo(s: EscenarioSnapshot | null): void {
 
 export function getEscenarioActivo(): EscenarioSnapshot | null {
   return SNAPSHOT;
+}
+
+// ── Escenario personalizado: construccion del vector ───────────────────────
+// La suma de los valores dentro del rango activo siempre iguala `magnitud`,
+// segun lo definido por el usuario. Posiciones fuera del rango son 0. El
+// vector resultante se aplica luego con la misma logica multiplicativa que
+// los eventos existentes (calcularEscenario), indexado por calendar month.
+
+/**
+ * Construye el vector mensual (12 posiciones, idx 0=enero ... 11=diciembre)
+ * para un escenario personalizado.
+ *
+ * @param magnitud Impacto total acumulado del escenario en %; ej. 12 para
+ *   +12% repartidos en el rango. Suma del vector en el rango = magnitud.
+ * @param duracion Numero de meses de duracion del impacto (1..12). Si
+ *   `mesInicio + duracion` excede el horizonte de 12, el caller debe haber
+ *   recortado antes (validacion 4.4 del brief).
+ * @param mesInicio Calendar month de inicio (1..12).
+ * @param tipoImpacto "sostenido" (constante), "gradual" (rampa creciente),
+ *   "brusco" (rampa decreciente).
+ * @returns Array de 12 numeros con la distribucion mensual.
+ */
+export function buildCustomVector(
+  magnitud: number,
+  duracion: number,
+  mesInicio: number,
+  tipoImpacto: TipoImpacto,
+): number[] {
+  const out = new Array(12).fill(0);
+  if (duracion <= 0 || !Number.isFinite(magnitud)) return out;
+  const inicioIdx = Math.max(1, Math.min(12, mesInicio)) - 1;
+  const fin = Math.min(12, inicioIdx + duracion);
+  const len = fin - inicioIdx;
+  if (len <= 0) return out;
+
+  if (tipoImpacto === "sostenido" || len === 1) {
+    // Constante: cada mes recibe magnitud / len.
+    const v = magnitud / len;
+    for (let i = inicioIdx; i < fin; i++) out[i] = v;
+    return out;
+  }
+
+  // Pesos en rampa lineal sobre [1, 2, ..., len]. Suma = len*(len+1)/2.
+  // Para "gradual" usamos pesos crecientes; para "brusco" decrecientes.
+  const sumaPesos = (len * (len + 1)) / 2;
+  for (let k = 0; k < len; k++) {
+    const peso = tipoImpacto === "gradual" ? k + 1 : len - k;
+    out[inicioIdx + k] = (magnitud * peso) / sumaPesos;
+  }
+  return out;
 }
