@@ -93,9 +93,7 @@ export default function HeroBienvenida({ onExplorar, onFichaTecnica }: Props) {
       <div className="hero-content">
         <h1 className="hero-titulo">MatriX</h1>
         <p className="hero-subtitulo">
-          Predicción y análisis territorial
-          <br />
-          de la demanda automovilística en España
+          Predicción y análisis territorial de la demanda automovilística en España
         </p>
 
         <div className="hero-cuerpo">
@@ -158,9 +156,9 @@ export default function HeroBienvenida({ onExplorar, onFichaTecnica }: Props) {
                 <p className="hero-badge-sub">en España</p>
               </div>
               <div className="hero-badge">
-                <p className="hero-badge-num">3</p>
-                <p className="hero-badge-label">Niveles de cobertura</p>
-                <p className="hero-badge-sub">Nacional · Provincial · Municipal</p>
+                <p className="hero-badge-niveles">Nacional · Provincial · Municipal</p>
+                <p className="hero-badge-label">Cobertura</p>
+                <p className="hero-badge-sub">Tres niveles geográficos</p>
               </div>
             </div>
 

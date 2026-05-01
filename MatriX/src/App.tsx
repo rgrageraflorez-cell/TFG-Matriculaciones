@@ -7,7 +7,6 @@ import CognitivaTab from "./CognitivaTab";
 import SuscripcionTab from "./SuscripcionTab";
 import FichaTecnicaTab from "./FichaTecnicaTab";
 import ModeloNegocioTab from "./ModeloNegocioTab";
-import HomeIntro from "./components/HomeIntro";
 import HeroBienvenida from "./components/HeroBienvenida";
 
 export default function App() {
@@ -69,12 +68,7 @@ export default function App() {
       {/* ── Contenido ── */}
       <main className="max-w-7xl mx-auto px-8" style={{ paddingTop: 32, paddingBottom: 48 }}>
         <div style={{ display: activeTab === "descriptiva" ? "block" : "none" }}>
-          {visited.current.has("descriptiva") && (
-            <>
-              <HomeIntro onNavigate={handleTabChange} />
-              <DescriptivaTab />
-            </>
-          )}
+          {visited.current.has("descriptiva") && <DescriptivaTab />}
         </div>
         <div style={{ display: activeTab === "predictiva" ? "block" : "none" }}>
           {visited.current.has("predictiva") && <PredictivaTab onNavigate={handleTabChange} />}
