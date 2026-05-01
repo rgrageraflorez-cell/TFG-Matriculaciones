@@ -157,7 +157,7 @@ if not exist "%DOWNLOAD_PY%" (
 )
 %PY% "%DOWNLOAD_PY%" auto
 if errorlevel 1 (
-  echo   AVISO: download_dgt.py termino con errores (no critico).
+  echo   AVISO: download_dgt.py termino con errores ^(no critico^).
 ) else (
   echo   Descarga DGT completada.
 )
@@ -259,26 +259,13 @@ if not exist "%ALERT_PY%" (
   echo   AVISO: %ALERT_PY% no existe. Saltando.
   goto :eof
 )
-REM Carga .env (prioriza el de la raiz del web dashboard, fallback al de scripts).
-if exist "%WEB_DIR%\.env" (
-  for /f "usebackq tokens=1,* delims==" %%a in ("%WEB_DIR%\.env") do (
-    if not "%%a"=="" if not "%%a:~0,1%"=="#" set "%%a=%%b"
-  )
-) else if exist "%SCRIPTS_DIR%\.env" (
-  for /f "usebackq tokens=1,* delims==" %%a in ("%SCRIPTS_DIR%\.env") do (
-    if not "%%a"=="" if not "%%a:~0,1%"=="#" set "%%a=%%b"
-  )
-)
-REM Si no hay KV configurado y tampoco subscribers.json local, no hay destinatarios.
-if not defined KV_REST_API_URL (
-  if not exist "%SCRIPTS_DIR%\subscribers.json" (
+REM El propio alert_engine.py carga .env via python-dotenv y reporta si
+REM faltan KV / RESEND_API_KEY. No parseamos el .env desde el batch.
+if not exist "%SCRIPTS_DIR%\subscribers.json" (
+  if not exist "%WEB_DIR%\.env" if not exist "%SCRIPTS_DIR%\.env" (
     echo   Sin Vercel KV ni subscribers.json local, no hay destinatarios. Saltando.
     goto :eof
   )
-)
-if not defined RESEND_API_KEY (
-  echo   AVISO: Falta RESEND_API_KEY en el entorno o en .env. Saltando.
-  goto :eof
 )
 %PY% "%ALERT_PY%"
 if errorlevel 1 (
@@ -309,15 +296,13 @@ if %DAY% GTR 3 (
   echo   Hoy es dia %DAY%; el informe mensual solo se envia los dias 1-3. Saltando.
   goto :eof
 )
-if not defined KV_REST_API_URL (
-  if not exist "%SCRIPTS_DIR%\subscribers.json" (
+REM monthly_report.py carga .env via python-dotenv y reporta si faltan
+REM credenciales. Solo comprobamos que haya algun destinatario potencial.
+if not exist "%SCRIPTS_DIR%\subscribers.json" (
+  if not exist "%WEB_DIR%\.env" if not exist "%SCRIPTS_DIR%\.env" (
     echo   Sin Vercel KV ni subscribers.json local, no hay destinatarios. Saltando.
     goto :eof
   )
-)
-if not defined RESEND_API_KEY (
-  echo   AVISO: Falta RESEND_API_KEY. Saltando informe mensual.
-  goto :eof
 )
 %PY% "%REPORT_PY%"
 if errorlevel 1 (
