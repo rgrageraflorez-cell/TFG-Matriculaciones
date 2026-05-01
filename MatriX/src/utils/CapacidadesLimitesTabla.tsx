@@ -55,6 +55,12 @@ const FILAS: Fila[] = [
     noPuede:
       "Producir estimaciones robustas para marcas con presencia minoritaria en provincias pequeñas (p. ej. supermarcas en provincias rurales).",
   },
+  {
+    puede:
+      "Descomponer variaciones interanuales en componente estacional esperable y desvío estructural, distinguiendo caídas de calendario de cambios reales de mercado.",
+    noPuede:
+      "Atribuir causalidad a los desvíos estructurales detectados (qué los provoca, cuánto durarán).",
+  },
 ];
 
 // Tonos de fondo: izquierda crema neutro, derecha ambar muy suave (no rojo:

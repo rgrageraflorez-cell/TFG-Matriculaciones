@@ -16,6 +16,11 @@ import { parseNumber, normalizeName, formatInt, formatDec, formatMonth, formatIS
 import { generarInformeTerritorial } from "./utils/generarInformeTerritorial";
 import GruposEmpresarialesSection from "./GruposEmpresarialesSection";
 import CuotaMarcaMapSection from "./CuotaMarcaMapSection";
+import {
+  descomponerVariacion,
+  getPerfilEstacionalEmpirico,
+} from "./utils/descomposicionEstacional";
+import DescomposicionInline from "./utils/DescomposicionInline";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -145,6 +150,49 @@ export default function DescriptivaTab() {
     return { total, media: total / vals.length, max, variacion };
   }, [monthlySeries]);
 
+  // ── Perfil estacional empirico (Plan B): mediana de ratios mensuales sobre
+  //    media anual, calculada sobre los anios completos del CSV ya cargado.
+  //    Cuando el pipeline R exponga la descomposicion Prophet en JSON, basta
+  //    con sustituir esta linea por un fetch al JSON sin tocar el resto.
+  const perfilEstacional = useMemo(() => {
+    return getPerfilEstacionalEmpirico(
+      monthlySeries.map((d) => ({ fecha_mes: d.fecha_mes, valor: d.matriculaciones })),
+    );
+  }, [monthlySeries]);
+
+  // ── Variacion mes-vs-mismo-mes-ano-anterior + descomposicion estacional ──
+  // Toma el ultimo mes con dato real y compara con el mismo mes del anio
+  // anterior. Aplica descomponerVariacion() para separar componente estacional
+  // de residual estructural.
+  const yoyMensual = useMemo(() => {
+    if (monthlySeries.length === 0) return null;
+    const ult = monthlySeries[monthlySeries.length - 1];
+    const ultAnio = parseInt(ult.fecha_mes.slice(0, 4), 10);
+    const ultMes = parseInt(ult.fecha_mes.slice(5, 7), 10);
+    if (!Number.isFinite(ultAnio) || !Number.isFinite(ultMes)) return null;
+    const prev = monthlySeries.find(
+      (d) =>
+        parseInt(d.fecha_mes.slice(0, 4), 10) === ultAnio - 1 &&
+        parseInt(d.fecha_mes.slice(5, 7), 10) === ultMes,
+    );
+    if (!prev || prev.matriculaciones <= 0) return null;
+    const yoy = ((ult.matriculaciones - prev.matriculaciones) / prev.matriculaciones) * 100;
+    const desc = descomponerVariacion({
+      mes: ultMes,
+      variacion_yoy: yoy,
+      perfil_estacional: perfilEstacional.valores,
+    });
+    return {
+      mes: ultMes,
+      anio: ultAnio,
+      yoy,
+      ultActual: ult.matriculaciones,
+      ultPrev: prev.matriculaciones,
+      descomposicion: desc,
+      perfilDisponible: perfilEstacional.anios_usados.length >= 2,
+    };
+  }, [monthlySeries, perfilEstacional]);
+
   // Top 10 brands evolution
   const top10BrandsSeries = useMemo(() => {
     // Find top 10 brands by total
@@ -220,7 +268,7 @@ export default function DescriptivaTab() {
   return (
     <div className="space-y-8">
       {/* KPIs */}
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-white border border-[#E5E7EB] border-l-[3px] border-l-[#1A2B4A] rounded p-5">
           <p className="text-sm text-slate-500">Total matriculaciones</p>
           <p className="text-3xl font-bold text-slate-900 mt-2">{formatInt(kpis.total)}</p>
@@ -230,11 +278,28 @@ export default function DescriptivaTab() {
           <p className="text-3xl font-bold text-slate-900 mt-2">{formatDec(kpis.media)}</p>
         </div>
         <div className="bg-white border border-[#E5E7EB] border-l-[3px] border-l-[#1A2B4A] rounded p-5">
-          <p className="text-sm text-slate-500">Variación interanual</p>
+          <p className="text-sm text-slate-500">Variación interanual (anual)</p>
           <p className={`text-3xl font-bold mt-2 ${kpis.variacion >= 0 ? "text-emerald-600" : "text-red-600"}`}>
             {kpis.variacion >= 0 ? "+" : ""}{formatDec(kpis.variacion)}%
           </p>
         </div>
+        {/* KPI mensual con descomposicion estacional vs residual estructural.
+            La descomposicion solo se muestra si hay al menos 2 anios completos
+            en la serie para calcular el perfil empirico (si no, es ruido). */}
+        {yoyMensual && (
+          <div className="bg-white border border-[#E5E7EB] border-l-[3px] border-l-[#C4922A] rounded p-5">
+            <p className="text-sm text-slate-500">Último mes vs año anterior</p>
+            <p className={`text-3xl font-bold mt-2 ${yoyMensual.yoy >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+              {yoyMensual.yoy >= 0 ? "+" : ""}{formatDec(yoyMensual.yoy)}%
+            </p>
+            {yoyMensual.perfilDisponible && (
+              <DescomposicionInline
+                descomposicion={yoyMensual.descomposicion}
+                mes={yoyMensual.mes}
+              />
+            )}
+          </div>
+        )}
         <div className="bg-white border border-[#E5E7EB] border-l-[3px] border-l-[#1A2B4A] rounded p-5">
           <p className="text-sm text-slate-500">Mes pico</p>
           <p className="text-2xl font-bold text-slate-900 mt-2">{peakMonth}</p>
