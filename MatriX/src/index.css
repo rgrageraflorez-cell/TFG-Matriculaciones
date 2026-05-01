@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700;800;900&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -225,4 +225,242 @@
   background: #FFFFFF !important;
   border-radius: 2px !important;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Hero de bienvenida (data-noir). Overlay 100vh al cargar, sale de la
+   pantalla al scrollear. NO sticky, NO fixed: vive en el flujo normal del
+   documento como primer hijo del root.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@keyframes hero-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes hero-fade-down {
+  from { opacity: 0; transform: translateY(-20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes hero-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes hero-prov-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.hero-bienvenida {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  background: #0A0F1E;
+  color: #E2E8F0;
+  font-family: "Inter", -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  overflow: hidden;
+  animation: hero-fade-in 0.3s ease-out;
+}
+
+.hero-noise {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 240'><filter id='n'><feTurbulence baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  opacity: 0.04;
+  mix-blend-mode: screen;
+}
+
+.hero-grid {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(196,146,42,0.10) 1px, transparent 1px);
+  background-size: 36px 36px;
+  background-position: 0 0;
+  opacity: 0.45;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 30%, transparent 100%);
+}
+
+.hero-content {
+  position: relative;
+  width: 100%;
+  max-width: 1400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  z-index: 1;
+}
+
+.hero-titulo {
+  font-family: "DM Sans", "Inter", sans-serif;
+  font-weight: 800;
+  font-size: clamp(64px, 9vw, 140px);
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  color: #FFFFFF;
+  margin: 0;
+  opacity: 0;
+  animation: hero-fade-down 0.5s 0.2s cubic-bezier(0.16,1,0.3,1) forwards;
+}
+
+.hero-subtitulo {
+  font-family: "Inter", sans-serif;
+  font-size: clamp(13px, 1.05vw, 17px);
+  font-weight: 400;
+  color: #94A3B8;
+  margin: 16px 0 0 0;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  max-width: 640px;
+  opacity: 0;
+  animation: hero-fade-in 0.4s 0.5s ease-out forwards;
+}
+
+.hero-cuerpo {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(380px, 1.4fr);
+  gap: 56px;
+  width: 100%;
+  margin-top: 56px;
+  align-items: center;
+  text-align: left;
+}
+
+.hero-mapa {
+  width: 100%;
+}
+
+.hero-derecha {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.hero-badges {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.hero-badge {
+  border: 1px solid rgba(196,146,42,0.4);
+  background: rgba(255,255,255,0.02);
+  border-radius: 4px;
+  padding: 18px 20px;
+  opacity: 0;
+  animation: hero-fade-up 0.4s cubic-bezier(0.16,1,0.3,1) forwards;
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+.hero-badge:nth-child(1) { animation-delay: 0.80s; }
+.hero-badge:nth-child(2) { animation-delay: 0.90s; }
+.hero-badge:nth-child(3) { animation-delay: 1.00s; }
+.hero-badge:nth-child(4) { animation-delay: 1.10s; }
+.hero-badge:hover {
+  border-color: rgba(196,146,42,0.9);
+  transform: scale(1.02);
+}
+
+.hero-badge-num {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: clamp(26px, 2.6vw, 38px);
+  font-weight: 500;
+  color: #C4922A;
+  margin: 0;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.hero-badge-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #E2E8F0;
+  margin: 14px 0 4px 0;
+}
+
+.hero-badge-sub {
+  font-size: 11px;
+  color: #94A3B8;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.hero-botones {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  opacity: 0;
+  animation: hero-fade-in 0.3s 2.20s ease-out forwards;
+}
+
+.hero-btn {
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 13px 26px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+  letter-spacing: 0.01em;
+}
+.hero-btn-primary {
+  background: #C4922A;
+  color: #0A0F1E;
+  border: 1px solid #C4922A;
+}
+.hero-btn-primary:hover {
+  background: #D9A33B;
+  border-color: #D9A33B;
+}
+.hero-btn-secondary {
+  background: transparent;
+  color: #E2E8F0;
+  border: 1px solid rgba(226,232,240,0.4);
+}
+.hero-btn-secondary:hover {
+  border-color: #E2E8F0;
+  background: rgba(255,255,255,0.03);
+}
+
+.hero-pie {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #475569;
+  text-transform: uppercase;
+  opacity: 0;
+  animation: hero-fade-in 0.5s 2.4s ease-out forwards;
+}
+
+@media (max-width: 900px) {
+  .hero-cuerpo {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    margin-top: 32px;
+  }
+  .hero-mapa { max-width: 360px; margin: 0 auto; }
+}
+@media (max-width: 480px) {
+  .hero-badges { grid-template-columns: 1fr; }
+}
+
+/* Reduced motion: salta toda la coreografia */
+@media (prefers-reduced-motion: reduce) {
+  .hero-bienvenida,
+  .hero-bienvenida *,
+  .hero-bienvenida *::before,
+  .hero-bienvenida *::after {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

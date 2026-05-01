@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useRef, useState } from "react";
 import type { TabId } from "./types";
 import TabNav from "./TabNav";
 import DescriptivaTab from "./DescriptivaTab";
@@ -8,6 +8,7 @@ import SuscripcionTab from "./SuscripcionTab";
 import FichaTecnicaTab from "./FichaTecnicaTab";
 import ModeloNegocioTab from "./ModeloNegocioTab";
 import HomeIntro from "./components/HomeIntro";
+import HeroBienvenida from "./components/HeroBienvenida";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("descriptiva");
@@ -19,10 +20,33 @@ export default function App() {
     setActiveTab(tab);
   };
 
+  // Ref al header navy para hacer scroll suave desde el hero ("Explorar dashboard")
+  const headerRef = useRef<HTMLElement | null>(null);
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToDashboard = () => {
+    headerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const handleFichaTecnicaDesdeHero = () => {
+    handleTabChange("ficha-tecnica");
+    // Pequeno delay para que React monte la tab antes de scroll
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  };
+
   return (
     <div className="min-h-screen exec-app-bg">
+      {/* ── Hero de bienvenida (data-noir, primer 100vh) ── */}
+      <HeroBienvenida
+        onExplorar={scrollToDashboard}
+        onFichaTecnica={handleFichaTecnicaDesdeHero}
+      />
+
       {/* ── Cabecera ejecutiva ── */}
-      <header className="exec-header w-full">
+      <header ref={headerRef} className="exec-header w-full">
         <div className="max-w-7xl mx-auto w-full px-8 flex items-center">
           <div className="flex flex-col leading-tight">
             <span className="text-white font-bold tracking-tight" style={{ fontSize: 20 }}>
@@ -36,7 +60,7 @@ export default function App() {
       </header>
 
       {/* ── Navegación de pestañas ── */}
-      <div className="bg-white" style={{ borderBottom: "1px solid #E5E7EB" }}>
+      <div ref={tabsRef} className="bg-white" style={{ borderBottom: "1px solid #E5E7EB" }}>
         <div className="max-w-7xl mx-auto px-8">
           <TabNav active={activeTab} onChange={handleTabChange} />
         </div>
