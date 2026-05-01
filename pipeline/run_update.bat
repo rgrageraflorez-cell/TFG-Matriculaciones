@@ -23,6 +23,7 @@ set "SCRIPTS_DIR=%BASE_DIR%\Datasets web\Web dashboard\scripts"
 set "PIPELINE_R=%SCRIPT_DIR%update_pipeline.R"
 set "MD_DIARIO_R=%SCRIPT_DIR%export_md_diario.R"
 set "PROPHET_R=%SCRIPT_DIR%export_prophet.R"
+set "MARCA_PROV_R=%SCRIPT_DIR%export_marca_provincia.R"
 set "DOWNLOAD_PY=%SCRIPT_DIR%download_dgt.py"
 set "ALERT_PY=%SCRIPTS_DIR%\alert_engine.py"
 set "REPORT_PY=%SCRIPTS_DIR%\monthly_report.py"
@@ -229,6 +230,17 @@ if exist "%MD_DIARIO_R%" (
     echo   AVISO: export_md_diario.R fallo ^(no critico, continuando^)
   ) else (
     echo   Export MD diario completado.
+  )
+)
+
+if exist "%MARCA_PROV_R%" (
+  echo.
+  echo   Ejecutando export marca x provincia anual...
+  "%RSCRIPT%" "%MARCA_PROV_R%"
+  if errorlevel 1 (
+    echo   AVISO: export_marca_provincia.R fallo ^(no critico, continuando^)
+  ) else (
+    echo   Export marca x provincia anual completado.
   )
 )
 
