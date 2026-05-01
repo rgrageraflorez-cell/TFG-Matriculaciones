@@ -4,6 +4,13 @@ import { scaleQuantile } from "d3-scale";
 import type { GeoJsonType } from "./types";
 import { fetchCsv, parseNumber, formatInt, formatDec } from "./utils.tsx";
 import MapLegendQuantile from "./utils/MapLegendQuantile";
+import {
+  evaluarFiabilidad,
+  COLOR_NO_FIABLE,
+  UMBRAL_ABSOLUTO,
+  UMBRAL_RELATIVO,
+  type FiabilidadOutput,
+} from "./utils/fiabilidadMarcaProvincia";
 
 // Paleta secuencial monocromatica (mismo tono navy/azul que el mapa de
 // densidad para coherencia visual: la lectura cromatica unifica los dos
@@ -62,6 +69,7 @@ export default function CuotaMarcaMapSection({
     matric: number;
     cuota: number;
     cuotaNacional: number;
+    fiabilidad: FiabilidadOutput;
   } | null>(null);
 
   // ── Carga del CSV pre-agregado ──────────────────────────────────────────
@@ -151,18 +159,30 @@ export default function CuotaMarcaMapSection({
   }, [data, marcaSel]);
 
   // ── Lookup por provincia para la marca seleccionada ─────────────────────
+  // Adjuntamos la evaluacion de fiabilidad por provincia (Patron 4 - control
+  // estadistico). Una provincia con muestra insuficiente (n<10 o n<1‰ del
+  // nacional) se renderiza en gris neutro y el tooltip subordina la cuota a
+  // la advertencia.
   const provLookup: Record<
     string,
-    { matric: number; cuota: number }
+    { matric: number; cuota: number; fiabilidad: FiabilidadOutput }
   > = useMemo(() => {
-    const out: Record<string, { matric: number; cuota: number }> = {};
+    const out: Record<
+      string,
+      { matric: number; cuota: number; fiabilidad: FiabilidadOutput }
+    > = {};
     if (!data || !marcaSel) return out;
     const provs = data.byMarcaProv.get(marcaSel);
     if (!provs) return out;
+    const nNacionalMarca = data.totalMarcaNacional.get(marcaSel) ?? 0;
     for (const [cod, mat] of provs) {
       const totalP = data.totalProv.get(cod) ?? 0;
       const cuota = totalP > 0 ? (mat / totalP) * 100 : 0;
-      out[cod] = { matric: mat, cuota };
+      const fiabilidad = evaluarFiabilidad({
+        n_provincia: mat,
+        n_nacional_marca: nNacionalMarca,
+      });
+      out[cod] = { matric: mat, cuota, fiabilidad };
     }
     return out;
   }, [data, marcaSel]);
@@ -174,20 +194,30 @@ export default function CuotaMarcaMapSection({
   // en el rango bajo, donde mas informacion hay. Cuantiles distribuyen
   // uniformemente la atencion visual.
   const scale = useMemo(() => {
+    // La escala se construye SOLO sobre las provincias fiables. Las no fiables
+    // se sacan de la distribucion (no contribuyen a los cuantiles) y se
+    // renderizan en COLOR_NO_FIABLE por la funcion colorOf cuando se le pase
+    // explicitamente fiable=false.
     const values = Object.values(provLookup)
+      .filter((d) => d.fiabilidad.fiable)
       .map((d) => d.cuota)
       .filter((v) => v > 0);
     if (!values.length) {
       return {
         breaks: [0, 0, 0, 0],
-        colorOf: (_v: number) => COLOR_ZERO,
+        colorOf: (_v: number, fiable: boolean = true) =>
+          fiable ? COLOR_ZERO : COLOR_NO_FIABLE,
       };
     }
     const q = scaleQuantile<string>().domain(values).range(COLOR_BUCKETS);
     const [b1, b2, b3, b4] = q.quantiles();
     return {
       breaks: [b1 ?? 0, b2 ?? 0, b3 ?? 0, b4 ?? 0],
-      colorOf: (v: number) => (v <= 0 ? COLOR_ZERO : q(v)),
+      colorOf: (v: number, fiable: boolean = true) => {
+        if (!fiable) return COLOR_NO_FIABLE;
+        if (v <= 0) return COLOR_ZERO;
+        return q(v);
+      },
     };
   }, [provLookup]);
 
@@ -267,12 +297,17 @@ export default function CuotaMarcaMapSection({
                   const provName = String(geo.properties.name ?? "");
                   const cell = provLookup[provCode];
                   const cuota = cell?.cuota ?? 0;
+                  // Si la provincia no esta en el lookup, asumimos sin datos
+                  // (n=0) y por tanto no fiable, motivo "sin_datos".
+                  const fiabilidad =
+                    cell?.fiabilidad ??
+                    evaluarFiabilidad({ n_provincia: 0, n_nacional_marca: 1 });
                   const isHovered = hoveredProvince === provName;
                   return (
                     <Geography
                       key={geo.rsmKey}
                       geography={geo}
-                      fill={scale.colorOf(cuota)}
+                      fill={scale.colorOf(cuota, fiabilidad.fiable)}
                       stroke={isHovered ? "#C4922A" : "#94a3b8"}
                       strokeWidth={isHovered ? 2 : 0.4}
                       onMouseEnter={(evt) => {
@@ -284,6 +319,7 @@ export default function CuotaMarcaMapSection({
                           matric: cell?.matric ?? 0,
                           cuota,
                           cuotaNacional,
+                          fiabilidad,
                         });
                       }}
                       onMouseMove={(evt) => {
@@ -312,28 +348,53 @@ export default function CuotaMarcaMapSection({
               style={{ left: tooltip.x + 12, top: tooltip.y + 12, maxWidth: 320 }}
             >
               <div className="font-semibold text-slate-900 mb-1">{tooltip.provName}</div>
-              <div className="text-slate-600">
-                Matriculaciones {marcaSel}:{" "}
-                <span className="font-semibold text-slate-900">
-                  {formatInt(tooltip.matric)}
-                </span>
-              </div>
-              <div className="text-slate-600">
-                Cuota provincial:{" "}
-                <span className="font-semibold text-blue-700">
-                  {formatDec(tooltip.cuota)}%
-                </span>
-              </div>
-              <div className="text-slate-600 mt-1 text-xs">
-                {(() => {
-                  const delta = tooltip.cuota - tooltip.cuotaNacional;
-                  const sign = delta >= 0 ? "+" : "";
-                  const verb = delta >= 0 ? "sobre" : "respecto a";
-                  return `${sign}${formatDec(delta)} pp ${verb} la media nacional (${formatDec(
-                    tooltip.cuotaNacional,
-                  )}%)`;
-                })()}
-              </div>
+              {tooltip.fiabilidad.fiable ? (
+                <>
+                  <div className="text-slate-600">
+                    Matriculaciones {marcaSel}:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {formatInt(tooltip.matric)}
+                    </span>
+                  </div>
+                  <div className="text-slate-600">
+                    Cuota provincial:{" "}
+                    <span className="font-semibold text-blue-700">
+                      {formatDec(tooltip.cuota)}%
+                    </span>
+                  </div>
+                  <div className="text-slate-600 mt-1 text-xs">
+                    {(() => {
+                      const delta = tooltip.cuota - tooltip.cuotaNacional;
+                      const sign = delta >= 0 ? "+" : "";
+                      const verb = delta >= 0 ? "sobre" : "respecto a";
+                      return `${sign}${formatDec(delta)} pp ${verb} la media nacional (${formatDec(
+                        tooltip.cuotaNacional,
+                      )}%)`;
+                    })()}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="text-xs font-semibold mb-2"
+                    style={{ color: "#475569" }}
+                  >
+                    Fiabilidad insuficiente para estimación robusta
+                  </div>
+                  <div className="text-slate-600 text-xs">
+                    Matriculaciones de {marcaSel} en período:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {formatInt(tooltip.matric)}
+                    </span>
+                  </div>
+                  <div className="text-slate-500 text-xs">
+                    Umbral mínimo recomendado: {UMBRAL_ABSOLUTO}
+                  </div>
+                  <div className="text-slate-500 text-xs mt-2 italic">
+                    Cuota observada: {formatDec(tooltip.cuota)}% (orientativa)
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -344,6 +405,10 @@ export default function CuotaMarcaMapSection({
         colors={COLOR_BUCKETS}
         zeroColor={COLOR_ZERO}
         format={(v) => `${formatDec(v)}%`}
+        unreliableSwatch={{
+          color: COLOR_NO_FIABLE,
+          label: `Fiabilidad insuficiente (n < ${UMBRAL_ABSOLUTO} o n < ${UMBRAL_RELATIVO * 1000}‰ nacional)`,
+        }}
         footer={`cuota nacional ${marcaSel}: ${formatDec(cuotaNacional)}%`}
       />
     </section>

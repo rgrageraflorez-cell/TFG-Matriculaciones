@@ -12,6 +12,10 @@ type Props = {
   format: (v: number) => string;
   /** Pie opcional: titulo a la derecha (ej. "cuota nacional: 4,7%"). */
   footer?: string;
+  /** Swatch adicional opcional para "fiabilidad insuficiente" u otra
+   *  categoria fuera de la escala numerica. Se renderiza al final, antes
+   *  del footer. */
+  unreliableSwatch?: { color: string; label: string };
 };
 
 /**
@@ -28,6 +32,7 @@ export default function MapLegendQuantile({
   zeroColor,
   format,
   footer,
+  unreliableSwatch,
 }: Props) {
   if (breaks.length !== 4 || colors.length !== 5) {
     return null;
@@ -80,6 +85,22 @@ export default function MapLegendQuantile({
           <span>{labels[i]}</span>
         </span>
       ))}
+      {unreliableSwatch && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: 22,
+              height: 10,
+              background: unreliableSwatch.color,
+              border: "1px solid #E5E7EB",
+              borderRadius: 2,
+            }}
+          />
+          <span>{unreliableSwatch.label}</span>
+        </span>
+      )}
       {footer && (
         <span style={{ marginLeft: 8, fontStyle: "italic", color: "#9CA3AF" }}>
           · {footer}
