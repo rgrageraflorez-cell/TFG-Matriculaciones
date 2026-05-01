@@ -268,7 +268,7 @@ export default function DescriptivaTab() {
   return (
     <div className="space-y-8">
       {/* KPIs */}
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white border border-[#E5E7EB] border-l-[3px] border-l-[#1A2B4A] rounded p-5">
           <p className="text-sm text-slate-500">Total matriculaciones</p>
           <p className="text-3xl font-bold text-slate-900 mt-2">{formatInt(kpis.total)}</p>
@@ -283,29 +283,45 @@ export default function DescriptivaTab() {
             {kpis.variacion >= 0 ? "+" : ""}{formatDec(kpis.variacion)}%
           </p>
         </div>
-        {/* KPI mensual con descomposicion estacional vs residual estructural.
-            La descomposicion solo se muestra si hay al menos 2 anios completos
-            en la serie para calcular el perfil empirico (si no, es ruido). */}
-        {yoyMensual && (
-          <div className="bg-white border border-[#E5E7EB] border-l-[3px] border-l-[#C4922A] rounded p-5">
-            <p className="text-sm text-slate-500">Último mes vs año anterior</p>
-            <p className={`text-3xl font-bold mt-2 ${yoyMensual.yoy >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-              {yoyMensual.yoy >= 0 ? "+" : ""}{formatDec(yoyMensual.yoy)}%
-            </p>
-            {yoyMensual.perfilDisponible && (
-              <DescomposicionInline
-                descomposicion={yoyMensual.descomposicion}
-                mes={yoyMensual.mes}
-              />
-            )}
-          </div>
-        )}
         <div className="bg-white border border-[#E5E7EB] border-l-[3px] border-l-[#1A2B4A] rounded p-5">
           <p className="text-sm text-slate-500">Mes pico</p>
           <p className="text-2xl font-bold text-slate-900 mt-2">{peakMonth}</p>
           <p className="text-sm text-slate-400 mt-1">{formatInt(kpis.max)} uds.</p>
         </div>
       </section>
+
+      {/* Bloque YoY mensual con descomposicion estacional vs residual
+          estructural. Va en una seccion propia debajo de los KPIs (no
+          como 5 KPI) porque la descomposicion necesita respiracion: linea
+          larga de explicacion + badge interpretativo. La descomposicion
+          solo se muestra si hay al menos 2 anios completos en la serie. */}
+      {yoyMensual && (
+        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6 items-start">
+            <div>
+              <p className="text-sm text-slate-500">Último mes vs año anterior</p>
+              <p
+                className={`text-3xl font-bold mt-2 ${
+                  yoyMensual.yoy >= 0 ? "text-emerald-600" : "text-red-600"
+                }`}
+              >
+                {yoyMensual.yoy >= 0 ? "+" : ""}{formatDec(yoyMensual.yoy)}%
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {formatInt(yoyMensual.ultActual)} vs {formatInt(yoyMensual.ultPrev)} uds.
+              </p>
+            </div>
+            {yoyMensual.perfilDisponible && (
+              <div style={{ borderLeft: "1px solid #E5E7EB", paddingLeft: 24 }}>
+                <DescomposicionInline
+                  descomposicion={yoyMensual.descomposicion}
+                  mes={yoyMensual.mes}
+                />
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Filters */}
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
