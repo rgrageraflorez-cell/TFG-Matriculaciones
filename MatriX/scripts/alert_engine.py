@@ -122,55 +122,56 @@ class AnalisisForecast:
 # ────────────────────────────────────────────────────────────────────────────
 # Carga de datos
 # ────────────────────────────────────────────────────────────────────────────
-def _kv_env() -> tuple[str, str] | None:
-    """Devuelve (url, token) si las env vars de Vercel KV estan presentes."""
-    url = os.environ.get("KV_REST_API_URL", "").strip().rstrip("/")
-    token = os.environ.get("KV_REST_API_TOKEN", "").strip()
-    if url and token:
-        return url, token
-    return None
+def _blob_url() -> str | None:
+    """Construye la URL del blob de suscriptores con pathname obfuscado.
 
+    pathname = subscribers/<sha256(SUBSCRIBERS_SECRET + "v1")>.json
 
-def cargar_suscriptores_kv(url: str, token: str, key: str = "subscribers") -> list[dict[str, Any]]:
-    """Lee la lista de suscriptores desde Vercel KV (Upstash Redis REST).
-
-    Convencion: clave unica `subscribers` que almacena un JSON (lista de dicts).
+    Devuelve None si faltan SUBSCRIBERS_SECRET o BLOB_BASE_URL en el
+    entorno (limitacion conocida en GitHub Actions sobre repo publico:
+    los Secrets no se inyectan en workflows disparados desde forks).
     """
-    import urllib.request
-    req = urllib.request.Request(
-        f"{url}/get/{key}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except Exception as exc:
-        raise RuntimeError(f"Vercel KV /get/{key} fallo: {exc}") from exc
-    raw = payload.get("result")
-    if raw is None or raw == "":
-        return []
-    if isinstance(raw, list):
-        return raw
-    if isinstance(raw, str):
-        try:
-            data = json.loads(raw)
-            return data if isinstance(data, list) else []
-        except json.JSONDecodeError:
-            return []
-    return []
+    import hashlib
+    secret = os.environ.get("SUBSCRIBERS_SECRET", "").strip()
+    base = os.environ.get("BLOB_BASE_URL", "").strip().rstrip("/")
+    if not secret or not base:
+        return None
+    h = hashlib.sha256((secret + "v1").encode("utf-8")).hexdigest()
+    return f"{base}/subscribers/{h}.json"
 
 
 def cargar_suscriptores(path: Path) -> list[dict[str, Any]]:
-    """Carga suscriptores desde Vercel KV si esta configurado, si no desde JSON local."""
-    kv = _kv_env()
-    if kv is not None:
-        url, token = kv
+    """Carga suscriptores desde Vercel Blob (URL obfuscada con secret) si
+    esta configurado, si no desde JSON local como fallback.
+
+    El blob es access:"public" (unico valor soportado por @vercel/blob v1.x),
+    asi que se lee con fetch sin autenticacion. La privacidad se basa en
+    que la URL no es enumerable (depende de SUBSCRIBERS_SECRET).
+    """
+    url = _blob_url()
+    if url is not None:
+        import urllib.request
         try:
-            subs = cargar_suscriptores_kv(url, token)
-            print(f"[KV] {len(subs)} suscriptores cargados desde Vercel KV")
-            return subs
-        except RuntimeError as exc:
-            print(f"[KV] WARN: {exc}; intentando JSON local como fallback", file=sys.stderr)
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(data, list):
+                        print(f"[BLOB] {len(data)} suscriptores cargados desde Vercel Blob")
+                        return data
+        except Exception as exc:
+            print(
+                f"[BLOB] WARN: no se pudo leer suscriptores desde Blob ({exc}); "
+                "intentando JSON local como fallback",
+                file=sys.stderr,
+            )
+    else:
+        print(
+            "[BLOB] AVISO: SUBSCRIBERS_SECRET o BLOB_BASE_URL no presentes en "
+            "el entorno. Lista de suscriptores remota no consultada (uso "
+            "JSON local si existe).",
+            file=sys.stderr,
+        )
     if not path.exists():
         return []
     try:

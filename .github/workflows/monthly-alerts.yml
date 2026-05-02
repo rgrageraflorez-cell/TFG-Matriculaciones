@@ -48,8 +48,8 @@ jobs:
         env:
           # Credenciales -- definir como Secrets del repo en
           # Settings -> Secrets and variables -> Actions.
-          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
-          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+          BLOB_BASE_URL: ${{ secrets.BLOB_BASE_URL }}
+          SUBSCRIBERS_SECRET: ${{ secrets.SUBSCRIBERS_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           ALERT_SENDER: ${{ secrets.ALERT_SENDER }}
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
@@ -60,8 +60,8 @@ jobs:
       - name: Run monthly executive report
         if: ${{ github.event_name == 'schedule' || inputs.run_monthly == 'true' }}
         env:
-          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
-          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+          BLOB_BASE_URL: ${{ secrets.BLOB_BASE_URL }}
+          SUBSCRIBERS_SECRET: ${{ secrets.SUBSCRIBERS_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           REPORT_SENDER: ${{ secrets.REPORT_SENDER }}
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}

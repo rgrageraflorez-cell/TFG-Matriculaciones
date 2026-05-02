@@ -1,124 +1,190 @@
 # Sistema de suscripciones — Runbook de provisión
 
-Este documento describe los pasos de **infraestructura** que hay que dar
-para que la pestaña **Suscripción** funcione en producción (Vercel) con
-persistencia real y envío automatizado de alertas e informes mensuales.
+Este documento describe los pasos de **infraestructura** necesarios para
+que la pestaña **Suscripción** funcione en producción (Vercel) con
+persistencia real y envío automatizado de alertas + informe mensual.
 
 El código ya está implementado:
 
-- `api/subscribe.ts` — Vercel Serverless Function que persiste en Vercel KV.
-- `vite.config.ts` — sigue manteniendo el middleware de dev (`/api/subscribe`
-  con persistencia en `scripts/subscribers.json`) para `npm run dev`.
-- `scripts/alert_engine.py` y `scripts/monthly_report.py` — leen de Vercel KV
-  si las env vars `KV_REST_API_URL` / `KV_REST_API_TOKEN` están definidas;
-  si no, caen al JSON local.
-- `.github/workflows/monthly-alerts.yml` — cron mensual independiente del PC.
-- `pipeline/run_update.bat` — el cron local también dispara `monthly_report.py`.
+- `api/subscribe.ts` — Vercel Serverless Function que persiste en
+  **Vercel Blob** con pathname obfuscado.
+- `vite.config.ts` — middleware de dev (`/api/subscribe` con
+  persistencia en `scripts/subscribers.json`) para `npm run dev`. Sin
+  cambios.
+- `scripts/alert_engine.py` y `scripts/monthly_report.py` — leen el
+  blob obfuscado si `SUBSCRIBERS_SECRET` y `BLOB_BASE_URL` están en el
+  entorno; fallback a `subscribers.json` local.
+- `.github/workflows/monthly-alerts.yml` — cron mensual día 10 a las
+  05:00 UTC, inyecta los Secrets para acceder al blob remoto.
+- `pipeline/run_update.bat` — el cron local también dispara los dos
+  scripts python tras el pipeline R.
 
-## 1. Crear la base de datos Vercel KV
+## Modelo de privacidad
 
-1. En el dashboard de Vercel del proyecto MatriX → pestaña **Storage**.
-2. **Create Database → KV**. Elige región Frankfurt (eu-central) o París.
-3. Vercel creará automáticamente las env vars en el proyecto:
-   `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN`,
-   `KV_URL`. No hace falta tocarlas a mano — están vinculadas al proyecto.
-4. **Redeploy** el proyecto (Deployments → último → ⋯ → Redeploy) para que
-   el endpoint `/api/subscribe` cargue las env vars nuevas.
+Vercel Blob v1.x **solo soporta `access: "public"`**. Toda URL es
+accesible sin autenticación. La privacidad de este sistema se basa en
+que el pathname del blob **no es enumerable**:
+
+```
+subscribers/<sha256(SUBSCRIBERS_SECRET + "v1")>.json
+```
+
+Quien no conozca `SUBSCRIBERS_SECRET` no puede construir la URL exacta
+y por tanto no puede descargar la lista. Es **privacidad por
+obfuscación**, no por autenticación. Implicaciones:
+
+- Si el secret se filtra (logs, dump de env vars, repo público
+  accidental), la URL queda comprometida y hay que **rotar** el
+  secret. Cambiar `SUBSCRIBERS_SECRET` regenera el pathname; los
+  suscriptores quedan en el pathname antiguo hasta migrar el blob a
+  mano (download → put nuevo).
+- El sufijo `"v1"` permite versionar la rotación (`"v2"`, `"v3"`…)
+  cambiando el pathname sin tocar código.
+- No es PII privacidad-real para un servicio comercial; es suficiente
+  para un TFG académico con intención no maliciosa de los usuarios.
+
+Para privacidad real haría falta migrar a Vercel Postgres, Upstash
+Redis directo (con `@upstash/redis`) o cualquier KV con autenticación
+por token. Decisión documentada: out-of-scope esta iteración.
+
+## 1. Crear el Blob store en Vercel
+
+1. Vercel dashboard → tu proyecto MatriX → pestaña **Storage**.
+2. **Create Database → Blob**.
+3. Vercel inyecta automáticamente:
+   - `BLOB_READ_WRITE_TOKEN` — credencial server-side.
+4. Anota la **URL base** del store (Storage → tu blob → "Domains" o
+   "Settings"). Formato:
+   `https://<store-id>.public.blob.vercel-storage.com`. Hay que
+   añadirla manualmente como `BLOB_BASE_URL` (Vercel no la inyecta
+   por defecto con ese nombre).
+
+## 2. Configurar Resend (envío de emails)
+
+1. Crear cuenta en https://resend.com (free 100 emails/día,
+   3.000/mes).
+2. Verificar un dominio O usar el sandbox `onboarding@resend.dev`
+   (limitado a tu propio email registrado en Resend).
+3. Crear API key.
+
+## 3. Variables de entorno en Vercel
+
+En Vercel → Project → Settings → Environment Variables, crear como
+**Production** (también Preview/Development según convenga):
+
+| Variable | Origen | Notas |
+|---|---|---|
+| `BLOB_READ_WRITE_TOKEN` | inyectada por integración Blob | no tocar |
+| `BLOB_BASE_URL` | manual | URL pública del store, sin trailing slash |
+| `SUBSCRIBERS_SECRET` | manual | cadena aleatoria larga (≥32 chars). Generar con `openssl rand -hex 32` |
+| `RESEND_API_KEY` | Resend dashboard | clave API |
+| `ALERT_SENDER` | manual | p. ej. `alertas@tu-dominio.com` |
+| `REPORT_SENDER` | manual | p. ej. `informes@tu-dominio.com` |
+| `DASHBOARD_URL` | manual | URL pública del dashboard |
+
+Tras añadir las variables: **Redeploy** desde Deployments → último →
+⋯ → Redeploy. Las funciones serverless solo leen env vars al iniciar.
 
 ### Verificación
 
 ```bash
 curl -X POST https://<tu-dominio>.vercel.app/api/subscribe \
-     -H 'content-type: application/json' \
-     -d '{"nombre":"Test","email":"test@example.com","provincia":"Madrid","cluster":"Grandes núcleos urbanos","informe_mensual":true}'
+  -H 'content-type: application/json' \
+  -d '{"nombre":"Test","email":"test@example.com","provincia":"Madrid","cluster":"Grandes núcleos urbanos","informe_mensual":true}'
 ```
 
-Debe responder `{"ok":true,"updated":false,"email":"test@example.com","total":1}`.
+Respuesta esperada: `{"ok":true,"updated":false,"email":"test@example.com","total":1}`.
 
-Si responde `503 "Almacenamiento de suscripciones no configurado"`, faltan
-las env vars de KV en el proyecto Vercel.
+Si responde `503 "falta BLOB_READ_WRITE_TOKEN"`: la integración Blob
+no está vinculada o el redeploy no se ejecutó tras vincularla.
 
-## 2. Configurar Resend (envío de emails)
+Si responde `503 "falta SUBSCRIBERS_SECRET"`: añade la variable a mano
+en Settings y redeploy.
 
-1. Crear cuenta en https://resend.com (free tier: 100 emails/día, 3.000/mes).
-2. Verificar un dominio propio O usar el sandbox `onboarding@resend.dev`
-   (solo permite enviar a tu propio email registrado en Resend).
-3. Crear una API key (dashboard Resend → API Keys → Create).
-4. Variables que usan los scripts Python:
-   - `RESEND_API_KEY` — la clave anterior.
-   - `ALERT_SENDER` — remitente para alertas (debe ser de un dominio
-     verificado en Resend; ejemplo: `alertas@tu-dominio.com`).
-   - `REPORT_SENDER` — remitente para informe mensual.
-   - `DASHBOARD_URL` — URL pública del dashboard (para enlaces dentro del
-     email). Ejemplo: `https://matrix-dashboard.vercel.app`.
+## 4. GitHub Actions: cron mensual desacoplado del PC
 
-## 3. GitHub Actions: cron mensual desacoplado del PC
+El workflow `.github/workflows/monthly-alerts.yml` se ejecuta el día
+10 de cada mes a las 05:00 UTC y permite también ejecución manual.
 
-El workflow `.github/workflows/monthly-alerts.yml` se ejecuta el día 1 de
-cada mes a las 05:00 UTC y también puede dispararse manualmente desde la
-pestaña **Actions** del repo.
+### Secrets a crear en GitHub
 
-### Secrets a crear
-
-En el repo GitHub `rgrageraflorez-cell/TFG-Matriculaciones` →
-**Settings → Secrets and variables → Actions → New repository secret**:
+Repo → **Settings → Secrets and variables → Actions → New repository
+secret**:
 
 | Secret name | Valor |
 |---|---|
-| `KV_REST_API_URL` | Copiar de Vercel → Project → Settings → Environment Variables |
-| `KV_REST_API_TOKEN` | Idem |
-| `RESEND_API_KEY` | Resend dashboard → API Keys |
-| `ALERT_SENDER` | p.ej. `alertas@tu-dominio.com` |
-| `REPORT_SENDER` | p.ej. `informes@tu-dominio.com` |
-| `DASHBOARD_URL` | URL pública del dashboard |
+| `BLOB_BASE_URL` | mismo valor que en Vercel |
+| `SUBSCRIBERS_SECRET` | mismo valor que en Vercel |
+| `RESEND_API_KEY` | misma clave Resend |
+| `ALERT_SENDER` | mismo |
+| `REPORT_SENDER` | mismo |
+| `DASHBOARD_URL` | mismo |
+
+⚠ **Limitación con repos públicos**: si tu repo es **público**, los
+Secrets de Actions **NO se inyectan** en workflows disparados desde
+forks o PRs externos. Para los workflows propios (`schedule` y
+`workflow_dispatch` desde la rama `main`) sí se inyectan. Si en algún
+momento el repo se hace público y alguien lo forkea, los workflows
+del fork verán el blob URL como vacío y el script Python caerá al
+fallback de fichero local (lista vacía → "0 emails enviados").
 
 ### Verificación
 
-GitHub → **Actions** → workflow "Monthly alerts and executive report" →
-**Run workflow** (botón). Tras ~1-2 minutos verás el resultado y los logs
-adjuntos como artefacto descargable.
+GitHub → **Actions** → workflow "Monthly alerts and executive report"
+→ **Run workflow**. Tras 1-2 min: descarga el artefacto
+`email-logs-<run_id>` con `alert_log.txt` y `monthly_report_log.txt`.
 
-## 4. Cron local (opcional, redundante con GitHub Actions)
+## 5. Cron local (tarea Windows)
 
-La tarea programada de Windows `DGT_Pipeline_Monthly` sigue funcionando.
-Tras estos cambios, además de `alert_engine.py` ahora también dispara
-`monthly_report.py` (los días 1-3 del mes). Si configuras KV en el `.env`
-de tu PC, ambos cron (local y GitHub) leerán la misma fuente de
-suscriptores.
+La tarea programada `DGT_Pipeline_Monthly` corre el día 10 de cada
+mes a las 04:00 (ver `pipeline/install_schedule.bat`). Tras
+regenerar los CSVs ejecuta `alert_engine.py` y `monthly_report.py`
+si hay credenciales. Para que lean del blob remoto, exportar las env
+vars en el `.env` local del dashboard:
 
-Para evitar emails duplicados (mismo mes enviado dos veces), basta con:
+```
+SUBSCRIBERS_SECRET=...
+BLOB_BASE_URL=https://<store-id>.public.blob.vercel-storage.com
+RESEND_API_KEY=re_...
+```
 
-- **Opción A (recomendada)**: deshabilitar la tarea local
-  `DGT_Pipeline_Monthly` (PowerShell: `Disable-ScheduledTask -TaskName
-  DGT_Pipeline_Monthly`) y dejar solo el GitHub Action.
-- **Opción B**: mantener ambas y aceptar que cada suscriptor recibe el
-  email dos veces el día 1.
-- **Opción C**: dejar el cron local solo para regenerar CSVs y comentar
-  `call :run_alerts` y `call :run_monthly_report` en `run_update.bat`.
+Si el `.env` no está, los scripts caen al fichero local y reportan en
+log "Lista de suscriptores remota no consultada".
 
-## 5. Trazabilidad
+## 6. Trazabilidad
 
-Cada ejecución se registra:
-
-- **GitHub Actions**: artefacto `email-logs-<run_id>` con `alert_log.txt` y
-  `monthly_report_log.txt` (retención 30 días).
-- **Cron local**: los logs se sobrescriben en `scripts/alert_log.txt` y
+- **GitHub Actions**: artefacto `email-logs-<run_id>` (retención 30
+  días).
+- **Cron local**: `scripts/alert_log.txt` y
   `scripts/monthly_report_log.txt`.
 
-## 6. Privacidad
+## 7. Rotación de secret
 
-- `subscribers.test.json` se ha movido a `scripts/fixtures/` (fuera de la
-  carpeta servida por Vercel) para evitar fuga de PII.
-- `scripts/*.py` ya no están en `public/`, así que no se sirven como
-  estáticos.
-- `subscribers.json` real **nunca** debe subirse al repo (ya lo cubre
-  `.gitignore`).
+Para invalidar el pathname actual (p. ej. tras sospecha de filtración
+del secret):
 
-## 7. Costes estimados (free tier suficiente para TFG)
+1. Generar nuevo `SUBSCRIBERS_SECRET` (`openssl rand -hex 32`).
+2. Actualizar la variable en Vercel + GitHub Secrets.
+3. Cambiar el sufijo en `api/subscribe.ts` de `"v1"` a `"v2"` (3
+   ocurrencias: el `BLOB_PATH` del .ts, el `_blob_url()` de cada
+   Python). Commit + redeploy.
+4. Migrar el contenido del blob viejo al nuevo manualmente (descargar
+   con la URL antigua mientras la sepas, hacer POST al nuevo endpoint
+   con cada suscriptor uno a uno, o construir un script ad-hoc).
+5. Borrar el blob viejo desde el dashboard de Vercel Blob.
 
-| Servicio | Free tier | Uso esperado MatriX |
+## 8. Privacidad y eliminación de un suscriptor
+
+Hoy el endpoint solo permite altas/upserts. Para baja de un usuario:
+manualmente, desde Vercel Blob Browser → descargar el JSON del
+pathname obfuscado → editar → re-subir. En una iteración futura
+añadir endpoint `DELETE /api/subscribe`.
+
+## 9. Costes estimados (free tier suficiente para TFG)
+
+| Servicio | Free tier | Uso esperado |
 |---|---|---|
-| Vercel | 100 GB bandwidth, 100k serverless invocations/mes | <10k invocaciones |
-| Vercel KV | 30k requests/mes, 256 MB storage | <1k requests, <1 MB |
-| Resend | 100 emails/día, 3.000/mes, 1 dominio | depende de #suscriptores × eventos |
-| GitHub Actions | 2.000 minutos/mes (repo público: ilimitado) | ~5 minutos/mes |
+| Vercel | 100 GB BW, 100k invocations/mes | <10k |
+| Vercel Blob | 1 GB storage, 5 GB BW/mes | <100 KB, <100 MB BW |
+| Resend | 100 emails/día, 3.000/mes | depende de #suscriptores × eventos |
+| GitHub Actions | 2.000 min/mes (público: ilimitado) | ~5 min/mes |

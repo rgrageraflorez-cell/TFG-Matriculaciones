@@ -1,25 +1,38 @@
 /**
  * api/subscribe.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Vercel Serverless Function que sustituye al middleware Vite en produccion.
+ * Vercel Serverless Function: persistencia de suscriptores en Vercel Blob.
  *
- * Almacenamiento: Vercel KV (Upstash Redis-compat).
- *   - Clave unica `subscribers` con un JSON (lista de objetos suscriptor).
- *   - Lectura: kv.get("subscribers")  -> array | string | null
- *   - Escritura: kv.set("subscribers", JSON.stringify(list))
+ * Almacenamiento: un unico JSON en Blob con pathname OBFUSCADO.
+ *   pathname: subscribers/<sha256(SUBSCRIBERS_SECRET + "v1")>.json
+ *   contenido: array de Subscriber[]
  *
- * Variables de entorno requeridas en Vercel (las inyecta automaticamente la
- * integracion KV de Vercel cuando vinculas la base de datos al proyecto):
- *   KV_REST_API_URL
- *   KV_REST_API_TOKEN
- *   KV_REST_API_READ_ONLY_TOKEN  (no usado aqui pero conviene tenerlo)
+ * Modelo de privacidad:
+ *   @vercel/blob v1.x solo soporta access: "public", asi que toda URL
+ *   resultante es accesible sin autenticacion. La privacidad se basa en
+ *   que el pathname depende de SUBSCRIBERS_SECRET, conocido solo por
+ *   este server y por los scripts Python autorizados. La URL no es
+ *   enumerable (no hay pista visible del nombre exacto del blob).
+ *   Limitacion: si el secret se filtra, la URL queda comprometida y
+ *   hay que rotarlo (cambiar SUBSCRIBERS_SECRET regenera el pathname).
+ *   No es privacidad por autenticacion sino por URL no enumerable.
  *
- * Si KV no esta configurado, la funcion responde 503 para que el frontend
- * muestre un mensaje claro en vez de un 500 opaco.
+ * Variables de entorno requeridas en Vercel:
+ *   BLOB_READ_WRITE_TOKEN  (la inyecta la integracion Blob)
+ *   SUBSCRIBERS_SECRET     (anadida a mano antes del deploy)
+ *
+ * Si alguna falta, la funcion responde 503 con mensaje claro.
+ *
+ * Migracion historica:
+ *   1. Inicio con @vercel/kv (deprecated v3, KV no provisionada).
+ *   2. Migracion a @vercel/blob, access "public" pathname predecible
+ *      (leak de PII).
+ *   3. Pathname obfuscado por sha256(secret + "v1") (esta version).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { kv } from "@vercel/kv";
+import { put, head } from "@vercel/blob";
+import { createHash } from "node:crypto";
 
 type Subscriber = {
   nombre: string;
@@ -32,7 +45,18 @@ type Subscriber = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const KV_KEY = "subscribers";
+
+// Pathname OBFUSCADO calculado UNA SOLA VEZ al cargar el modulo (no por
+// request). El sufijo "v1" permite rotar todo el pathname cambiando solo
+// el secret, sin tocar codigo. Si SUBSCRIBERS_SECRET no esta presente al
+// arrancar, dejamos un valor centinela que el handler detecta y responde
+// 503 antes de hacer cualquier IO.
+const SUBSCRIBERS_SECRET = process.env.SUBSCRIBERS_SECRET ?? "";
+const BLOB_PATH = SUBSCRIBERS_SECRET
+  ? `subscribers/${createHash("sha256")
+      .update(SUBSCRIBERS_SECRET + "v1")
+      .digest("hex")}.json`
+  : "";
 
 function ok(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -45,24 +69,41 @@ function err(message: string, status = 400) {
   return ok({ ok: false, error: message }, status);
 }
 
+/**
+ * Lee la lista de suscriptores del Blob. Si el blob aun no existe
+ * (primera suscripcion), devuelve array vacio sin propagar el error.
+ */
 async function readAll(): Promise<Subscriber[]> {
-  const raw = await kv.get<unknown>(KV_KEY);
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw as Subscriber[];
-  if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as Subscriber[]) : [];
-    } catch {
-      return [];
-    }
+  try {
+    const blob = await head(BLOB_PATH);
+    if (!blob || !blob.url) return [];
+    // Cache-busting: en Vercel Blob los CDN edges pueden servir versiones
+    // antiguas. Anadimos timestamp para garantizar el ultimo contenido.
+    const res = await fetch(`${blob.url}?t=${Date.now()}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? (data as Subscriber[]) : [];
+  } catch {
+    // head() lanza BlobNotFoundError si nunca se ha escrito el blob.
+    // Es el caso normal en la primera suscripcion: devolvemos vacio.
+    return [];
   }
-  return [];
 }
 
+/**
+ * Sobrescribe el blob con la lista actualizada. addRandomSuffix=false
+ * mantiene el pathname estable; allowOverwrite=true permite sustitucion.
+ */
 async function writeAll(list: Subscriber[]): Promise<void> {
-  // Guardamos como JSON-string para evitar ambiguedades de serializacion KV.
-  await kv.set(KV_KEY, JSON.stringify(list));
+  await put(BLOB_PATH, JSON.stringify(list), {
+    access: "public",
+    contentType: "application/json",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    // cacheControlMaxAge=0 para que el CDN no sirva versiones stale al
+    // siguiente readAll dentro del mismo flujo.
+    cacheControlMaxAge: 0,
+  });
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -73,11 +114,17 @@ export default async function handler(req: Request): Promise<Response> {
     });
   }
 
-  // Comprobacion temprana de KV: si las env vars no estan, devolvemos 503
-  // con mensaje claro en vez de explotar al primer kv.get().
-  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+  // Comprobacion temprana de credenciales: 503 con mensaje claro en vez
+  // de explotar al primer put().
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return err(
-      "Almacenamiento de suscripciones no configurado en el servidor (Vercel KV).",
+      "Almacenamiento de suscripciones no configurado en el servidor (falta BLOB_READ_WRITE_TOKEN).",
+      503,
+    );
+  }
+  if (!BLOB_PATH) {
+    return err(
+      "Almacenamiento de suscripciones no configurado en el servidor (falta SUBSCRIBERS_SECRET).",
       503,
     );
   }
@@ -105,7 +152,7 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     list = await readAll();
   } catch (e: any) {
-    return err(`Error leyendo de KV: ${e?.message ?? e}`, 500);
+    return err(`Error leyendo de Blob: ${e?.message ?? e}`, 500);
   }
 
   const idx = list.findIndex((s) => (s.email ?? "").toLowerCase() === email);
@@ -136,12 +183,13 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     await writeAll(list);
   } catch (e: any) {
-    return err(`Error escribiendo en KV: ${e?.message ?? e}`, 500);
+    return err(`Error escribiendo en Blob: ${e?.message ?? e}`, 500);
   }
 
   return ok({ ok: true, updated, email, total: list.length });
 }
 
-// Vercel runtime hint: usar Edge si quisieramos baja latencia, pero @vercel/kv
-// funciona en ambos. Dejamos node por compatibilidad amplia.
-export const config = { runtime: "nodejs" };
+// runtime: Vercel Node.js por defecto (no declarar
+// runtime: "nodejs" — valor invalido en Vercel; antes lo declarabamos y
+// provocaba que la funcion no se desplegara, devolviendo HTML como
+// fallback y colgando el await res.json() del frontend).

@@ -70,6 +70,10 @@ export default function SuscripcionTab() {
 
     setStatus({ kind: "submitting" });
     try {
+      // Timeout de 10s defensivo: si la funcion serverless de Vercel no
+      // responde (p.ej. cold start patologico, runtime mal configurado,
+      // SPA fallback que devuelve HTML stream sin cerrar), abortamos y
+      // mostramos error en vez de spinner infinito.
       const res = await fetch("/api/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,22 +84,44 @@ export default function SuscripcionTab() {
           cluster: form.cluster,
           informe_mensual: form.informe_mensual,
         }),
+        signal: AbortSignal.timeout(10000),
       });
-      if (!res.ok) {
+
+      // Manejo defensivo del cuerpo: si el endpoint no esta desplegado o
+      // Vercel devuelve el SPA index.html (HTML), parsear como JSON
+      // colgaria. Comprobamos content-type primero.
+      const contentType = res.headers.get("content-type") ?? "";
+      let data: any;
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
         const text = await res.text();
-        throw new Error(text || `Error ${res.status}`);
+        throw new Error(
+          `Respuesta inesperada del servidor (status ${res.status}): ${text.slice(0, 100)}`,
+        );
       }
-      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          (data && data.error) ?? `Error ${res.status} al procesar la suscripción`,
+        );
+      }
+
       setStatus({ kind: "success", updated: !!data.updated, email: form.email.trim().toLowerCase() });
       setForm(initial);
       setTouched({ nombre: false, email: false, provincia: false, cluster: false });
     } catch (err: any) {
+      const isTimeout = err?.name === "TimeoutError" || err?.name === "AbortError";
+      const isNetwork =
+        err?.message?.includes("Failed to fetch") ||
+        err?.message?.includes("NetworkError");
       setStatus({
         kind: "error",
-        message:
-          err?.message?.includes("Failed to fetch") || err?.message?.includes("NetworkError")
-            ? "No se pudo conectar con el servidor de suscripciones. Arranca el dashboard con 'npm run dev' para habilitar el endpoint."
-            : err?.message ?? "Error desconocido al registrar la suscripción",
+        message: isTimeout
+          ? "El servidor tardó demasiado en responder (>10 s). Inténtalo de nuevo."
+          : isNetwork
+          ? "No se pudo conectar con el servidor de suscripciones. Arranca el dashboard con 'npm run dev' para habilitar el endpoint."
+          : err?.message ?? "Error desconocido al registrar la suscripción",
       });
     }
   };
