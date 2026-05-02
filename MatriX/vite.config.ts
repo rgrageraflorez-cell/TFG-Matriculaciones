@@ -121,9 +121,13 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [react(), tailwindcss(), subscribersApiPlugin()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-    },
+    // TODO: cuando se integre Gemini, usar VITE_GEMINI_API_KEY
+    // con import.meta.env.VITE_GEMINI_API_KEY en el cliente,
+    // o mejor: mover la llamada a api/llm.ts (server-side).
+    // No descomentar este define sin revisión de seguridad.
+    // define: {
+    //   'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+    // },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
