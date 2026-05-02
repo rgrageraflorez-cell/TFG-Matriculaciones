@@ -72,20 +72,26 @@ function err(message: string, status = 400) {
 /**
  * Lee la lista de suscriptores del Blob. Si el blob aun no existe
  * (primera suscripcion), devuelve array vacio sin propagar el error.
+ *
+ * - head() con abortSignal de 8s para no agotar el limite de 10s del
+ *   runtime serverless si el servicio Blob no responde.
+ * - fetch() del CDN con cache:"no-store" para garantizar lectura fresca
+ *   tras un put(), sin necesidad de query-params custom de cache-busting.
  */
 async function readAll(): Promise<Subscriber[]> {
   try {
-    const blob = await head(BLOB_PATH);
+    const blob = await head(BLOB_PATH, {
+      abortSignal: AbortSignal.timeout(8000),
+    });
     if (!blob || !blob.url) return [];
-    // Cache-busting: en Vercel Blob los CDN edges pueden servir versiones
-    // antiguas. Anadimos timestamp para garantizar el ultimo contenido.
-    const res = await fetch(`${blob.url}?t=${Date.now()}`);
+    const res = await fetch(blob.url, { cache: "no-store" });
     if (!res.ok) return [];
     const data = await res.json();
     return Array.isArray(data) ? (data as Subscriber[]) : [];
   } catch {
     // head() lanza BlobNotFoundError si nunca se ha escrito el blob.
     // Es el caso normal en la primera suscripcion: devolvemos vacio.
+    // Tambien capturamos AbortError si head() supera el timeout.
     return [];
   }
 }
@@ -93,6 +99,11 @@ async function readAll(): Promise<Subscriber[]> {
 /**
  * Sobrescribe el blob con la lista actualizada. addRandomSuffix=false
  * mantiene el pathname estable; allowOverwrite=true permite sustitucion.
+ *
+ * NO se pasa cacheControlMaxAge: el SDK rechaza valores < 60 (1 minuto)
+ * y reintenta internamente, lo que provocaba timeouts del runtime
+ * serverless. El default del SDK (1 mes) esta bien — el readAll()
+ * fuerza frescura via fetch(..., { cache: "no-store" }).
  */
 async function writeAll(list: Subscriber[]): Promise<void> {
   await put(BLOB_PATH, JSON.stringify(list), {
@@ -100,9 +111,7 @@ async function writeAll(list: Subscriber[]): Promise<void> {
     contentType: "application/json",
     addRandomSuffix: false,
     allowOverwrite: true,
-    // cacheControlMaxAge=0 para que el CDN no sirva versiones stale al
-    // siguiente readAll dentro del mismo flujo.
-    cacheControlMaxAge: 0,
+    abortSignal: AbortSignal.timeout(8000),
   });
 }
 
