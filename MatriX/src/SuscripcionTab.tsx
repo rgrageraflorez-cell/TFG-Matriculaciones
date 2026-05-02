@@ -64,12 +64,17 @@ export default function SuscripcionTab() {
     setTouched((prev) => ({ ...prev, [key]: true }));
 
   const handleSubmit = async (e: React.FormEvent) => {
+    console.log('[suscripcion] handler ejecutado', { isValid, errors, form });
     e.preventDefault();
     setTouched({ nombre: true, email: true, provincia: true, cluster: true });
-    if (!isValid) return;
+    if (!isValid) {
+      console.log('[suscripcion] ABORTADO: validacion fallida', errors);
+      return;
+    }
 
     setStatus({ kind: "submitting" });
     try {
+      console.log('[suscripcion] enviando fetch a /api/subscribe...');
       // Timeout de 10s defensivo: si la funcion serverless de Vercel no
       // responde (p.ej. cold start patologico, runtime mal configurado,
       // SPA fallback que devuelve HTML stream sin cerrar), abortamos y

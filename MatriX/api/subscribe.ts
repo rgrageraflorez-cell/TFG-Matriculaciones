@@ -79,19 +79,29 @@ function err(message: string, status = 400) {
  *   tras un put(), sin necesidad de query-params custom de cache-busting.
  */
 async function readAll(): Promise<Subscriber[]> {
+  const t0 = Date.now();
   try {
+    console.log(`[subscribe][readAll] +0ms head() inicio`);
     const blob = await head(BLOB_PATH, {
       abortSignal: AbortSignal.timeout(8000),
     });
+    console.log(`[subscribe][readAll] +${Date.now() - t0}ms head() OK url=${blob?.url ? "set" : "null"}`);
     if (!blob || !blob.url) return [];
-    const res = await fetch(blob.url, { cache: "no-store" });
+    console.log(`[subscribe][readAll] +${Date.now() - t0}ms fetch() inicio`);
+    const res = await fetch(blob.url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8000),
+    });
+    console.log(`[subscribe][readAll] +${Date.now() - t0}ms fetch() OK status=${res.status}`);
     if (!res.ok) return [];
     const data = await res.json();
+    console.log(`[subscribe][readAll] +${Date.now() - t0}ms json() OK n=${Array.isArray(data) ? data.length : "noarr"}`);
     return Array.isArray(data) ? (data as Subscriber[]) : [];
-  } catch {
+  } catch (e: any) {
+    console.log(`[subscribe][readAll] +${Date.now() - t0}ms catch: ${e?.name ?? "?"}: ${e?.message ?? e}`);
     // head() lanza BlobNotFoundError si nunca se ha escrito el blob.
     // Es el caso normal en la primera suscripcion: devolvemos vacio.
-    // Tambien capturamos AbortError si head() supera el timeout.
+    // Tambien capturamos AbortError si head()/fetch() superan el timeout.
     return [];
   }
 }
@@ -106,16 +116,27 @@ async function readAll(): Promise<Subscriber[]> {
  * fuerza frescura via fetch(..., { cache: "no-store" }).
  */
 async function writeAll(list: Subscriber[]): Promise<void> {
-  await put(BLOB_PATH, JSON.stringify(list), {
-    access: "public",
-    contentType: "application/json",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    abortSignal: AbortSignal.timeout(8000),
-  });
+  const t0 = Date.now();
+  try {
+    console.log(`[subscribe][writeAll] +0ms put() inicio n=${list.length}`);
+    await put(BLOB_PATH, JSON.stringify(list), {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      abortSignal: AbortSignal.timeout(8000),
+    });
+    console.log(`[subscribe][writeAll] +${Date.now() - t0}ms put() OK`);
+  } catch (e: any) {
+    console.log(`[subscribe][writeAll] +${Date.now() - t0}ms catch: ${e?.name ?? "?"}: ${e?.message ?? e}`);
+    throw e;
+  }
 }
 
 export default async function handler(req: Request): Promise<Response> {
+  const tH = Date.now();
+  console.log(`[subscribe][handler] +0ms entrada method=${req.method}`);
+
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", {
       status: 405,
@@ -125,18 +146,22 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Comprobacion temprana de credenciales: 503 con mensaje claro en vez
   // de explotar al primer put().
+  console.log(`[subscribe][handler] +${Date.now() - tH}ms validando secrets`);
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms 503 falta BLOB_READ_WRITE_TOKEN`);
     return err(
       "Almacenamiento de suscripciones no configurado en el servidor (falta BLOB_READ_WRITE_TOKEN).",
       503,
     );
   }
   if (!BLOB_PATH) {
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms 503 falta SUBSCRIBERS_SECRET`);
     return err(
       "Almacenamiento de suscripciones no configurado en el servidor (falta SUBSCRIBERS_SECRET).",
       503,
     );
   }
+  console.log(`[subscribe][handler] +${Date.now() - tH}ms secrets OK`);
 
   let payload: any;
   try {
@@ -159,8 +184,11 @@ export default async function handler(req: Request): Promise<Response> {
   const now = new Date().toISOString();
   let list: Subscriber[];
   try {
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms readAll() inicio`);
     list = await readAll();
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms readAll() OK n=${list.length}`);
   } catch (e: any) {
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms readAll() ERROR ${e?.message ?? e}`);
     return err(`Error leyendo de Blob: ${e?.message ?? e}`, 500);
   }
 
@@ -190,11 +218,15 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   try {
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms writeAll() inicio`);
     await writeAll(list);
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms writeAll() OK`);
   } catch (e: any) {
+    console.log(`[subscribe][handler] +${Date.now() - tH}ms writeAll() ERROR ${e?.message ?? e}`);
     return err(`Error escribiendo en Blob: ${e?.message ?? e}`, 500);
   }
 
+  console.log(`[subscribe][handler] +${Date.now() - tH}ms 200 OK updated=${updated} total=${list.length}`);
   return ok({ ok: true, updated, email, total: list.length });
 }
 
