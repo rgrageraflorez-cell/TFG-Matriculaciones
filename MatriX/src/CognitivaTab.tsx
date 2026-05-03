@@ -285,26 +285,69 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
     return { clusterMap: map, clusterStats: stats };
   }, [latestData]);
 
-  // Province-level cluster lookup (dominant cluster per province, weighted by matriculaciones)
+  // Province-level cluster lookup: cluster MAS SOBRERREPRESENTADO por provincia
+  // respecto a la cuota nacional de matriculaciones. Asi se evita que el cluster
+  // "Grandes nucleos urbanos" gane trivialmente en casi todas las provincias por
+  // el peso absoluto de las grandes ciudades. La metrica es:
+  //   ratio_prov_cluster = (matric_cluster_prov / matric_total_prov)
+  //                       / (matric_cluster_nacional / matric_total_nacional)
+  // El cluster con mayor ratio identifica que tipologia es atipicamente
+  // sobrerrepresentada en esa provincia respecto a la media nacional.
   const provClusterLookup = useMemo(() => {
     const provClusters: Record<string, Record<string, number>> = {};
     const provRatios: Record<string, { sum: number; count: number; mat: number }> = {};
+    const nacionalClusters: Record<string, number> = {};
+    let nacionalTotal = 0;
+
     clusterMap.forEach((entry) => {
       const prov = String(entry.cod_ine ?? "").substring(0, 2);
       if (!prov || prov.length < 2) return;
       if (!provClusters[prov]) provClusters[prov] = {};
-      // Weight by matriculaciones instead of counting municipalities
       provClusters[prov][entry.clusterName] = (provClusters[prov][entry.clusterName] || 0) + entry.matriculaciones;
       if (!provRatios[prov]) provRatios[prov] = { sum: 0, count: 0, mat: 0 };
       provRatios[prov].sum += entry.ratio_x1000;
       provRatios[prov].count++;
       provRatios[prov].mat += entry.matriculaciones;
+      // Acumulado nacional para calcular cuotas de referencia
+      nacionalClusters[entry.clusterName] = (nacionalClusters[entry.clusterName] || 0) + entry.matriculaciones;
+      nacionalTotal += entry.matriculaciones;
     });
+
+    // Cuota nacional de cada cluster (sobre matriculaciones totales)
+    const cuotaNacional: Record<string, number> = {};
+    for (const [name, mat] of Object.entries(nacionalClusters)) {
+      cuotaNacional[name] = nacionalTotal > 0 ? mat / nacionalTotal : 0;
+    }
+
     const lookup: Record<string, { clusterName: string; ratio: number; mat: number }> = {};
     for (const [prov, clusters] of Object.entries(provClusters)) {
-      const dominant = Object.entries(clusters).sort((a, b) => b[1] - a[1])[0][0];
       const r = provRatios[prov];
-      lookup[prov] = { clusterName: dominant, ratio: r.count > 0 ? r.sum / r.count : 0, mat: r.mat };
+      const matProv = r.mat || 1;
+      // Calcula ratio de sobrerrepresentacion para cada cluster presente
+      let bestCluster = "";
+      let bestRatio = -Infinity;
+      for (const [name, matCluster] of Object.entries(clusters)) {
+        const cuotaProv = matCluster / matProv;
+        const cuotaNac = cuotaNacional[name] || 0;
+        // Ignora clusters con cuota nacional ~0 (evita division por cero
+        // y artefactos numericos: serian sobrerrepresentaciones triviales)
+        if (cuotaNac <= 0) continue;
+        const ratio = cuotaProv / cuotaNac;
+        if (ratio > bestRatio) {
+          bestRatio = ratio;
+          bestCluster = name;
+        }
+      }
+      // Fallback: si por alguna razon ningun cluster tiene cuota nacional > 0,
+      // usar el dominante absoluto como respaldo
+      if (!bestCluster) {
+        bestCluster = Object.entries(clusters).sort((a, b) => b[1] - a[1])[0][0];
+      }
+      lookup[prov] = {
+        clusterName: bestCluster,
+        ratio: r.count > 0 ? r.sum / r.count : 0,
+        mat: r.mat,
+      };
     }
     return lookup;
   }, [clusterMap]);
@@ -838,10 +881,16 @@ export default function CognitivaTab({ onNavigate }: Props = {}) {
 
       {/* ── Cluster map ── */}
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <h2 className="text-xl font-semibold mb-1">Mapa de clusters municipales</h2>
-        <p className="text-slate-500 text-sm mb-2">
-          Cada municipio se clasifica según su ratio de matriculaciones y tamaño poblacional.
-          Haz click en un municipio para ver su perfil.
+        <h2 className="text-xl font-semibold mb-1">Perfil territorial dominante por provincia</h2>
+        <p className="text-slate-500 text-sm mb-1">
+          Cluster con mayor sobrerrepresentación relativa respecto a la distribución
+          nacional de matriculaciones.
+        </p>
+        <p className="text-slate-400 text-xs mb-2 italic">
+          El color representa el cluster que concentra una cuota de matriculaciones
+          proporcionalmente mayor en esta provincia que en el conjunto de España.
+          Cada municipio se clasifica según su ratio de matriculaciones y tamaño poblacional;
+          haz click en un municipio para ver su perfil.
         </p>
         {onNavigate && (
           <p style={{ margin: "0 0 16px 0", fontSize: 11 }}>
